@@ -255,6 +255,15 @@ Dry-run (no writes):
 python3 -m ledgerflow alerts run --at 2026-02-10 --dry-run
 ```
 
+Supported rule types now include:
+
+- `category_budget`
+- `recurring_new`
+- `merchant_spike`
+- `recurring_changed`
+- `cash_heavy_day`
+- `unclassified_spend`
+
 ## Export
 
 Export corrected transactions to CSV:
