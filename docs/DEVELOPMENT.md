@@ -71,3 +71,9 @@ With a key, API routes require `X-API-Key` or `Authorization: Bearer ...` (excep
 docker build -t ledgerflow .
 docker run --rm -p 8787:8787 -v \"$PWD/data:/data\" ledgerflow
 ```
+
+## Demo Onboarding Run
+
+```bash
+./scripts/demo_onboarding.sh
+```

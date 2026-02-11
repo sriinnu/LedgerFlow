@@ -112,6 +112,27 @@ docker build -t ledgerflow .
 docker run --rm -p 8787:8787 -v "$PWD/data:/data" ledgerflow
 ```
 
+## Demo Dataset + Script
+
+Sample onboarding assets are included:
+
+- `/Users/srinivaspendela/Sriinnu/Personal/Ledgerflow/samples/inbox/bank/statement.csv`
+- `/Users/srinivaspendela/Sriinnu/Personal/Ledgerflow/samples/inbox/receipts/receipt_farmers_market.txt`
+- `/Users/srinivaspendela/Sriinnu/Personal/Ledgerflow/samples/inbox/bills/invoice_city_power.txt`
+- `/Users/srinivaspendela/Sriinnu/Personal/Ledgerflow/samples/manual_entries.json`
+
+Run the full end-to-end demo:
+
+```bash
+./scripts/demo_onboarding.sh
+```
+
+Optional custom demo data directory:
+
+```bash
+./scripts/demo_onboarding.sh /absolute/path/to/demo-data
+```
+
 ## Testing
 
 ```bash

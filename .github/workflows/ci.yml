@@ -37,3 +37,8 @@ jobs:
           python -m ledgerflow --help
           python -m ledgerflow --data-dir .tmp/ci-data init
           python -m ledgerflow --data-dir .tmp/ci-data migrate status
+
+      - name: Demo onboarding smoke
+        run: |
+          chmod +x scripts/demo_onboarding.sh
+          ./scripts/demo_onboarding.sh .tmp/demo-ci

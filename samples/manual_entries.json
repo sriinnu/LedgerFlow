@@ -1,0 +1,17 @@
+[
+  {
+    "occurredAt": "2026-02-10",
+    "amount": { "value": "-12.30", "currency": "USD" },
+    "merchant": "Farmers Market",
+    "description": "cash fallback entry",
+    "categoryHint": "groceries",
+    "tags": ["cash"]
+  },
+  {
+    "occurredAt": "2026-02-10",
+    "amount": { "value": "-180.00", "currency": "USD" },
+    "merchant": "ATM CASH",
+    "description": "cash withdrawal",
+    "tags": ["cash"]
+  }
+]

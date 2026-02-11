@@ -127,3 +127,11 @@ python3 -m unittest discover -s tests
 - User/system edits are `CorrectionEvents` in `corrections.jsonl`.
 - Reports/charts are deterministic rebuild outputs.
 - Keep raw financial data under `data/` private (already gitignored).
+
+## 11) Fast Demo (Included Samples)
+
+```bash
+./scripts/demo_onboarding.sh
+```
+
+This runs a complete import/build/report/charts/alerts/review flow against bundled sample files in `samples/`.

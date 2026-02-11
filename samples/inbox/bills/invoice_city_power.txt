@@ -1,0 +1,6 @@
+CITY POWER GAS
+Invoice Number: INV-2026-0205
+Bill Date: 2026-02-01
+Due Date: 2026-02-10
+Amount Due $89.99
+Usage 230 kWh
