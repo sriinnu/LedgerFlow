@@ -236,6 +236,18 @@ button:hover {
   font-weight: 700;
 }
 
+.chart-block {
+  gap: 8px;
+}
+
+canvas {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
 #review-table input[type="text"] {
   min-width: 130px;
   padding: 6px 8px;

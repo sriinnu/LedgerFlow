@@ -228,6 +228,40 @@
       </section>
 
       <section class="card">
+        <h2>Charts</h2>
+        <div class="grid">
+          <label>
+            Series from
+            <input id="charts-from" type="date" />
+          </label>
+          <label>
+            Series to
+            <input id="charts-to" type="date" />
+          </label>
+          <label>
+            Month (YYYY-MM)
+            <input id="charts-month" type="text" placeholder="2026-02" />
+          </label>
+          <div class="actions">
+            <button id="charts-refresh-btn" type="button">Load Charts</button>
+            <div class="muted" id="charts-result"></div>
+          </div>
+          <label class="full chart-block">
+            Spend Series
+            <canvas id="series-canvas" width="1000" height="260"></canvas>
+          </label>
+          <label class="full chart-block">
+            Category Breakdown
+            <canvas id="category-canvas" width="1000" height="300"></canvas>
+          </label>
+          <label class="full chart-block">
+            Top Merchants
+            <canvas id="merchant-canvas" width="1000" height="300"></canvas>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
         <h2>Review Queue</h2>
         <div class="grid">
           <label>

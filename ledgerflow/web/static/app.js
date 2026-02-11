@@ -148,6 +148,147 @@ async function refreshReviewQueue() {
   }
 }
 
+function toNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function clearCanvas(canvas) {
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  return ctx;
+}
+
+function drawSeriesChart(points) {
+  const canvas = document.getElementById("series-canvas");
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  const ctx = clearCanvas(canvas);
+
+  const grouped = new Map();
+  for (const p of points) {
+    const t = p.t || "";
+    if (!t) continue;
+    const cur = grouped.get(t) || { spend: 0, income: 0, net: 0 };
+    cur.spend += toNum(p.spend);
+    cur.income += toNum(p.income);
+    cur.net += toNum(p.net);
+    grouped.set(t, cur);
+  }
+  const xs = Array.from(grouped.keys()).sort();
+  const ys = xs.map((x) => grouped.get(x).spend);
+  if (xs.length === 0) {
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillText("No series data.", 18, 26);
+    return;
+  }
+
+  const pad = { l: 48, r: 18, t: 16, b: 28 };
+  const w = canvas.width - pad.l - pad.r;
+  const h = canvas.height - pad.t - pad.b;
+  const yMax = Math.max(...ys, 1);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t);
+  ctx.lineTo(pad.l, pad.t + h);
+  ctx.lineTo(pad.l + w, pad.t + h);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(82, 183, 255, 0.9)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  xs.forEach((x, i) => {
+    const px = pad.l + (i / Math.max(1, xs.length - 1)) * w;
+    const py = pad.t + h - (ys[i] / yMax) * h;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(82, 183, 255, 0.2)";
+  ctx.beginPath();
+  xs.forEach((x, i) => {
+    const px = pad.l + (i / Math.max(1, xs.length - 1)) * w;
+    const py = pad.t + h - (ys[i] / yMax) * h;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.lineTo(pad.l + w, pad.t + h);
+  ctx.lineTo(pad.l, pad.t + h);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
+  ctx.fillText(`Max spend ${yMax.toFixed(2)}`, pad.l + 6, pad.t + 14);
+  ctx.fillText(xs[0], pad.l, canvas.height - 8);
+  ctx.fillText(xs[xs.length - 1], canvas.width - 110, canvas.height - 8);
+}
+
+function drawTopBars(canvasId, items, labelKey) {
+  const canvas = document.getElementById(canvasId);
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  const ctx = clearCanvas(canvas);
+
+  const rows = (items || []).slice(0, 8).map((it) => ({
+    label: String(it[labelKey] || ""),
+    value: toNum(it.value),
+  }));
+  if (rows.length === 0) {
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillText("No data.", 18, 26);
+    return;
+  }
+
+  const padL = 170;
+  const padR = 18;
+  const top = 14;
+  const rowH = 30;
+  const barMaxW = canvas.width - padL - padR;
+  const maxVal = Math.max(...rows.map((r) => r.value), 1);
+
+  ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
+  rows.forEach((row, i) => {
+    const y = top + i * rowH;
+    const w = (row.value / maxVal) * barMaxW;
+    ctx.fillStyle = "rgba(82, 183, 255, 0.15)";
+    ctx.fillRect(padL, y + 4, barMaxW, 18);
+    ctx.fillStyle = "rgba(82, 183, 255, 0.8)";
+    ctx.fillRect(padL, y + 4, w, 18);
+    ctx.fillStyle = "rgba(255,255,255,0.86)";
+    const label = row.label.length > 26 ? `${row.label.slice(0, 25)}…` : row.label;
+    ctx.fillText(label, 10, y + 18);
+    ctx.fillText(row.value.toFixed(2), padL + Math.min(w + 8, barMaxW - 50), y + 18);
+  });
+}
+
+async function refreshCharts() {
+  const out = document.getElementById("charts-result");
+  const fromDate = document.getElementById("charts-from").value;
+  const toDate = document.getElementById("charts-to").value;
+  const month = (document.getElementById("charts-month").value || "").trim();
+  out.textContent = "working...";
+
+  try {
+    const [series, monthData] = await Promise.all([
+      apiPostJson("/api/charts/series", { fromDate, toDate }),
+      apiPostJson("/api/charts/month", { month, limit: 12 }),
+    ]);
+    drawSeriesChart((series.data || {}).points || []);
+    drawTopBars("category-canvas", (monthData.categoryBreakdown || {}).totals || [], "categoryId");
+    drawTopBars("merchant-canvas", (monthData.merchantTop || {}).top || [], "merchant");
+    const points = ((series.data || {}).points || []).length;
+    const cats = ((monthData.categoryBreakdown || {}).totals || []).length;
+    const merchants = ((monthData.merchantTop || {}).top || []).length;
+    out.textContent = `points=${points} categories=${cats} merchants=${merchants}`;
+  } catch (e) {
+    out.textContent = `error: ${String(e.message || e)}`;
+  }
+}
+
 async function boot() {
   try {
     const h = await apiGet("/api/health");
@@ -167,6 +308,16 @@ async function boot() {
   if (dailyDate && !dailyDate.value) dailyDate.value = t;
   const reviewDate = document.getElementById("review-date");
   if (reviewDate && !reviewDate.value) reviewDate.value = t;
+  const chartsFrom = document.getElementById("charts-from");
+  const chartsTo = document.getElementById("charts-to");
+  const chartsMonth = document.getElementById("charts-month");
+  if (chartsFrom && !chartsFrom.value) {
+    const dt = new Date();
+    dt.setDate(1);
+    chartsFrom.value = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-01`;
+  }
+  if (chartsTo && !chartsTo.value) chartsTo.value = t;
+  if (chartsMonth && !chartsMonth.value) chartsMonth.value = t.slice(0, 7);
 
   document.getElementById("manual-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -418,6 +569,10 @@ async function boot() {
     }
   });
 
+  document.getElementById("charts-refresh-btn").addEventListener("click", async () => {
+    await refreshCharts();
+  });
+
   document.querySelector("#review-table tbody").addEventListener("click", async (ev) => {
     const target = ev.target;
     if (!(target instanceof HTMLElement)) return;
@@ -446,6 +601,7 @@ async function boot() {
   });
 
   await refreshReviewQueue();
+  await refreshCharts();
   await refresh();
 }
 
