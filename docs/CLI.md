@@ -170,6 +170,34 @@ Range-limited build:
 python3 -m ledgerflow build --from-date 2026-02-01 --to-date 2026-02-29
 ```
 
+## SQLite Index
+
+Show index stats:
+
+```bash
+python3 -m ledgerflow index stats
+```
+
+Rebuild index from source-of-truth files:
+
+```bash
+python3 -m ledgerflow index rebuild
+```
+
+## Migrations
+
+Status:
+
+```bash
+python3 -m ledgerflow migrate status
+```
+
+Apply to latest:
+
+```bash
+python3 -m ledgerflow migrate up
+```
+
 ## Reports
 
 Daily report:

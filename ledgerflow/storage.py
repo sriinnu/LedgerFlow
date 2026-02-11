@@ -34,3 +34,11 @@ def append_jsonl(path: str | Path, obj: Any) -> None:
         f.write(json.dumps(obj, ensure_ascii=False))
         f.write("\n")
 
+    # Keep sqlite index in sync when writing ledger jsonl files.
+    try:
+        from .index_db import hook_after_append
+
+        hook_after_append(p, obj)
+    except Exception:
+        # Index updates are best-effort; file append remains source of truth.
+        pass

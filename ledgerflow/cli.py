@@ -10,8 +10,10 @@ from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
 from .csv_import import CsvMapping, csv_row_to_tx, infer_mapping, read_csv_rows
 from .exporting import export_transactions_csv
+from .index_db import has_source_hash, index_stats, rebuild_index
 from .layout import layout_for
 from .manual import ManualEntry, correction_event, manual_entry_to_tx, parse_amount, tombstone_event
+from .migrations import APP_SCHEMA_VERSION, migrate_to_latest, status as migration_status
 from .reporting import write_daily_report, write_monthly_report
 from .sources import register_file
 from .storage import append_jsonl
@@ -160,6 +162,37 @@ def _cmd_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_index_rebuild(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    result = rebuild_index(layout)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def _cmd_index_stats(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    print(json.dumps(index_stats(layout), ensure_ascii=False))
+    return 0
+
+
+def _cmd_migrate_status(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    print(json.dumps(migration_status(layout), ensure_ascii=False))
+    return 0
+
+
+def _cmd_migrate_up(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    target = args.to if args.to is not None else APP_SCHEMA_VERSION
+    result = migrate_to_latest(layout, target_version=target)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
 def _cmd_report_daily(args: argparse.Namespace) -> int:
     layout = layout_for(args.data_dir)
     init_data_layout(layout, write_defaults=False)
@@ -257,22 +290,6 @@ def _cmd_import_csv(args: argparse.Namespace) -> int:
     else:
         mapping = infer_mapping(headers)
 
-    existing_hashes: set[str] = set()
-    if args.commit and layout.transactions_path.exists():
-        for line in layout.transactions_path.read_text(encoding="utf-8").splitlines():
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            src = obj.get("source") or {}
-            if src.get("sourceType") != "bank_csv":
-                continue
-            if src.get("docId") != doc_id:
-                continue
-            h = src.get("sourceHash")
-            if isinstance(h, str):
-                existing_hashes.add(h)
-
     imported = 0
     skipped = 0
     errors = 0
@@ -298,11 +315,10 @@ def _cmd_import_csv(args: argparse.Namespace) -> int:
 
         if args.commit:
             h = tx["source"]["sourceHash"]
-            if h in existing_hashes:
+            if has_source_hash(layout, doc_id=doc_id, source_hash=h):
                 skipped += 1
                 continue
             append_jsonl(layout.transactions_path, tx)
-            existing_hashes.add(h)
             imported += 1
         else:
             if printed < args.sample:
@@ -465,6 +481,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--to-date", help="YYYY-MM-DD (inclusive)")
     p_build.add_argument("--include-deleted", action="store_true", help="Include tombstoned txs in derived caches.")
     p_build.set_defaults(func=_cmd_build)
+
+    p_index = sub.add_parser("index", help="SQLite index maintenance.")
+    sub_index = p_index.add_subparsers(dest="index_cmd", required=True)
+
+    p_ir = sub_index.add_parser("rebuild", help="Rebuild sqlite index from json/jsonl source-of-truth files.")
+    p_ir.set_defaults(func=_cmd_index_rebuild)
+
+    p_is = sub_index.add_parser("stats", help="Show sqlite index stats.")
+    p_is.set_defaults(func=_cmd_index_stats)
+
+    p_mig = sub.add_parser("migrate", help="App schema migrations.")
+    sub_mig = p_mig.add_subparsers(dest="migrate_cmd", required=True)
+
+    p_ms = sub_mig.add_parser("status", help="Show migration status.")
+    p_ms.set_defaults(func=_cmd_migrate_status)
+
+    p_mu = sub_mig.add_parser("up", help="Apply migrations up to latest or target version.")
+    p_mu.add_argument("--to", type=int, help="Target schema version (default: latest).")
+    p_mu.set_defaults(func=_cmd_migrate_up)
 
     p_report = sub.add_parser("report", help="Generate reports.")
     sub_report = p_report.add_subparsers(dest="report_cmd", required=True)

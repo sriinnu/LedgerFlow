@@ -22,6 +22,10 @@ data/
     state.json
     events.jsonl
   exports/
+  index/
+    ledgerflow.db
+  meta/
+    schema.json
   rules/
     categories.json
 ```

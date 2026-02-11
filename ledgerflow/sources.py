@@ -45,6 +45,12 @@ def register_file(
                 if doc_dir_existing.exists():
                     write_json(doc_dir_existing / "meta.json", doc)
                 write_json(index_path, index)
+                try:
+                    from .index_db import hook_after_source_register
+
+                    hook_after_source_register(index_path, doc)
+                except Exception:
+                    pass
             return doc
 
     doc_id = new_id("doc")
@@ -77,4 +83,10 @@ def register_file(
 
     index.setdefault("docs", []).append(doc)
     write_json(index_path, index)
+    try:
+        from .index_db import hook_after_source_register
+
+        hook_after_source_register(index_path, doc)
+    except Exception:
+        pass
     return doc

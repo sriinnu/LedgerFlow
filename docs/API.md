@@ -33,6 +33,13 @@ Extract text from uploaded file:
 
 - `POST /api/ocr/extract-upload` (multipart/form-data, field `file`)
 
+## Index / Migrations
+
+- `GET /api/index/stats`
+- `POST /api/index/rebuild`
+- `GET /api/migrate/status`
+- `POST /api/migrate/up` body: `{ "to": 2 }` (optional target)
+
 ## Initialize Data Layout
 
 `POST /api/init`

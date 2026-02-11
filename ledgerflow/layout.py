@@ -56,7 +56,22 @@ class Layout:
     def categories_path(self) -> Path:
         return self.rules_dir / "categories.json"
 
+    @property
+    def index_dir(self) -> Path:
+        return self.data_dir / "index"
+
+    @property
+    def index_db_path(self) -> Path:
+        return self.index_dir / "ledgerflow.db"
+
+    @property
+    def meta_dir(self) -> Path:
+        return self.data_dir / "meta"
+
+    @property
+    def schema_state_path(self) -> Path:
+        return self.meta_dir / "schema.json"
+
 
 def layout_for(data_dir: str | Path) -> Layout:
     return Layout(Path(data_dir))
-

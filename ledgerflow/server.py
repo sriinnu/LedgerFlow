@@ -18,10 +18,12 @@ from .dedup import mark_manual_duplicates_against_bank
 from .documents import import_and_parse_bill, import_and_parse_receipt
 from .extraction import extract_text, ocr_capabilities
 from .exporting import export_transactions_csv
+from .index_db import has_source_hash, index_stats, recent_transactions, rebuild_index
 from .jsonl import read_jsonl
 from .layout import Layout, layout_for
 from .linking import link_bills_to_bank, link_receipts_to_bank
 from .manual import ManualEntry, correction_event, manual_entry_to_tx, parse_amount, tombstone_event
+from .migrations import APP_SCHEMA_VERSION, migrate_to_latest, status as migration_status
 from .reporting import daily_report_data, render_daily_report_md, monthly_report_data, render_monthly_report_md, write_daily_report, write_monthly_report
 from .sources import register_file
 from .storage import append_jsonl, ensure_dir, read_json
@@ -102,18 +104,6 @@ def _import_csv_from_path(
     else:
         mapping = infer_mapping(headers)
 
-    existing_hashes: set[str] = set()
-    if commit and layout.transactions_path.exists():
-        for obj in read_jsonl(layout.transactions_path):
-            src = obj.get("source") or {}
-            if src.get("sourceType") != "bank_csv":
-                continue
-            if src.get("docId") != doc_id:
-                continue
-            h = src.get("sourceHash")
-            if isinstance(h, str):
-                existing_hashes.add(h)
-
     imported = 0
     skipped = 0
     errors = 0
@@ -137,11 +127,10 @@ def _import_csv_from_path(
 
         if commit:
             h = tx["source"]["sourceHash"]
-            if h in existing_hashes:
+            if has_source_hash(layout, doc_id=doc_id, source_hash=h):
                 skipped += 1
                 continue
             append_jsonl(layout.transactions_path, tx)
-            existing_hashes.add(h)
             imported += 1
         else:
             if len(samples) < sample:
@@ -200,10 +189,31 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         init_data_layout(layout, write_defaults=bool(write_defaults))
         return {"ok": True, "dataDir": str(layout.data_dir)}
 
+    @app.post("/api/index/rebuild")
+    def api_index_rebuild(request: Request) -> dict[str, Any]:
+        layout = _get_layout(request)
+        return rebuild_index(layout)
+
+    @app.get("/api/index/stats")
+    def api_index_stats(request: Request) -> dict[str, Any]:
+        layout = _get_layout(request)
+        return index_stats(layout)
+
+    @app.get("/api/migrate/status")
+    def api_migrate_status(request: Request) -> dict[str, Any]:
+        layout = _get_layout(request)
+        return migration_status(layout)
+
+    @app.post("/api/migrate/up")
+    def api_migrate_up(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        layout = _get_layout(request)
+        target = int(payload.get("to") or APP_SCHEMA_VERSION)
+        return migrate_to_latest(layout, target_version=target)
+
     @app.get("/api/transactions")
     def api_transactions(request: Request, limit: int = 50) -> dict[str, Any]:
         layout = _get_layout(request)
-        items = read_jsonl(layout.transactions_path, limit=limit)
+        items = recent_transactions(layout, limit=limit, include_deleted=False)
         return {"items": items}
 
     @app.get("/api/corrections")

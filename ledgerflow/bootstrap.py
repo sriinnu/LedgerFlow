@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .index_db import ensure_index_schema
 from .layout import Layout
 from .storage import ensure_dir, write_json
 
@@ -15,6 +16,9 @@ def init_data_layout(layout: Layout, *, write_defaults: bool = True) -> None:
     ensure_dir(layout.data_dir / "charts")
     ensure_dir(layout.data_dir / "alerts")
     ensure_dir(layout.data_dir / "rules")
+    ensure_dir(layout.index_dir)
+    ensure_dir(layout.meta_dir)
+    ensure_index_schema(layout.index_db_path)
 
     if not write_defaults:
         return
@@ -66,4 +70,3 @@ def init_data_layout(layout: Layout, *, write_defaults: bool = True) -> None:
                 ],
             },
         )
-

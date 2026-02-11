@@ -24,6 +24,14 @@ class TestApi(unittest.TestCase):
             self.assertEqual(caps.status_code, 200)
             self.assertIn("image_ocr_available", caps.json())
 
+            idx = client.get("/api/index/stats")
+            self.assertEqual(idx.status_code, 200)
+            self.assertIn("transactions", idx.json())
+
+            mig = client.get("/api/migrate/status")
+            self.assertEqual(mig.status_code, 200)
+            self.assertIn("latestVersion", mig.json())
+
             res = client.post(
                 "/api/manual/add",
                 json={
