@@ -82,6 +82,10 @@ Receipt example:
   "date": "2026-02-10",
   "total": { "value": "12.30", "currency": "USD" },
   "vat": [],
+  "parser": { "name": "receipt_parser", "version": "2.0", "template": "simple_total_line" },
+  "confidenceBreakdown": { "merchant": 0.3, "date": 0.25, "total": 0.35, "vat": 0.1 },
+  "missingFields": [],
+  "needsReview": false,
   "confidence": 1.0,
   "extraction": { "method": "text|pdfplumber|pypdf|pytesseract" },
   "parsedAt": "2026-02-10T21:20:00Z"
@@ -99,6 +103,10 @@ Bill example:
   "dueDate": "2026-02-15",
   "amount": { "value": "89.99", "currency": "USD" },
   "references": { "invoiceNumber": "INV-123" },
+  "parser": { "name": "bill_parser", "version": "2.0", "template": "standard_invoice" },
+  "confidenceBreakdown": { "vendor": 0.25, "amount": 0.4, "dates": 0.2, "invoiceNumber": 0.15 },
+  "missingFields": [],
+  "needsReview": false,
   "confidence": 0.8,
   "extraction": { "method": "text|pdfplumber|pypdf" },
   "parsedAt": "2026-02-10T21:20:00Z"

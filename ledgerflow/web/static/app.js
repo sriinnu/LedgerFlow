@@ -82,6 +82,40 @@ function renderTxTable(items) {
   }
 }
 
+function renderReviewQueue(items) {
+  const tbody = document.querySelector("#review-table tbody");
+  tbody.innerHTML = "";
+
+  for (const item of items) {
+    const kind = item.kind || "";
+    const date = item.date || "";
+    const id = kind === "transaction" ? item.txId || "" : item.docId || "";
+    const name = kind === "transaction" ? item.merchant || "" : item.sourceType || "";
+    const reasons = Array.isArray(item.reasons) ? item.reasons.join(", ") : "";
+
+    let actionCell = "-";
+    if (kind === "transaction" && id) {
+      actionCell = `
+        <div class="inline">
+          <input type="text" data-role="set-category" data-txid="${escapeHtml(id)}" placeholder="set category" />
+          <button data-role="resolve-category" data-txid="${escapeHtml(id)}" type="button">Apply</button>
+        </div>
+      `;
+    }
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(kind)}</td>
+      <td>${escapeHtml(date)}</td>
+      <td>${escapeHtml(id)}</td>
+      <td>${escapeHtml(name)}</td>
+      <td>${escapeHtml(reasons)}</td>
+      <td>${actionCell}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
 function escapeHtml(s) {
   return String(s)
     .replaceAll("&", "&amp;")
@@ -97,6 +131,23 @@ async function refresh() {
   renderTxTable(data.items || []);
 }
 
+async function refreshReviewQueue() {
+  const out = document.getElementById("review-result");
+  const date = document.getElementById("review-date").value || "";
+  const params = new URLSearchParams();
+  params.set("limit", "200");
+  if (date) params.set("date", date);
+  out.textContent = "working...";
+  try {
+    const data = await apiGet(`/api/review/queue?${params.toString()}`);
+    renderReviewQueue(data.items || []);
+    const c = data.counts || {};
+    out.textContent = `transactions=${c.transactions || 0} sourceParses=${c.sourceParses || 0}`;
+  } catch (e) {
+    out.textContent = `error: ${String(e.message || e)}`;
+  }
+}
+
 async function boot() {
   try {
     const h = await apiGet("/api/health");
@@ -106,6 +157,7 @@ async function boot() {
   }
 
   document.getElementById("refresh-btn").addEventListener("click", () => refresh().catch(console.error));
+  document.getElementById("review-refresh-btn").addEventListener("click", () => refreshReviewQueue().catch(console.error));
 
   // Defaults
   const t = todayIso();
@@ -113,6 +165,8 @@ async function boot() {
   if (alertsAt && !alertsAt.value) alertsAt.value = t;
   const dailyDate = document.querySelector("#daily-report-form input[name='date']");
   if (dailyDate && !dailyDate.value) dailyDate.value = t;
+  const reviewDate = document.getElementById("review-date");
+  if (reviewDate && !reviewDate.value) reviewDate.value = t;
 
   document.getElementById("manual-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -364,6 +418,34 @@ async function boot() {
     }
   });
 
+  document.querySelector("#review-table tbody").addEventListener("click", async (ev) => {
+    const target = ev.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.getAttribute("data-role") !== "resolve-category") return;
+    const txId = target.getAttribute("data-txid");
+    if (!txId) return;
+    const input = document.querySelector(`input[data-role="set-category"][data-txid="${CSS.escape(txId)}"]`);
+    const category = input instanceof HTMLInputElement ? input.value.trim() : "";
+    const out = document.getElementById("review-result");
+    if (!category) {
+      out.textContent = "error: set a category first";
+      return;
+    }
+    out.textContent = "saving...";
+    try {
+      await apiPostJson("/api/review/resolve", {
+        txId,
+        patch: { category: { id: category, confidence: 1.0, reason: "review_resolve" } },
+        reason: "review_resolve",
+      });
+      out.textContent = `updated ${txId}`;
+      await Promise.all([refresh(), refreshReviewQueue()]);
+    } catch (e) {
+      out.textContent = `error: ${String(e.message || e)}`;
+    }
+  });
+
+  await refreshReviewQueue();
   await refresh();
 }
 

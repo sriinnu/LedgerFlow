@@ -228,6 +228,35 @@
       </section>
 
       <section class="card">
+        <h2>Review Queue</h2>
+        <div class="grid">
+          <label>
+            Filter date (optional)
+            <input id="review-date" type="date" />
+          </label>
+          <div class="actions">
+            <button id="review-refresh-btn" type="button">Refresh Queue</button>
+            <div class="muted" id="review-result"></div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="review-table">
+            <thead>
+              <tr>
+                <th>Kind</th>
+                <th>Date</th>
+                <th>ID</th>
+                <th>Merchant/Source</th>
+                <th>Reasons</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
         <h2>Recent Transactions</h2>
         <div class="toolbar">
           <button id="refresh-btn" type="button">Refresh</button>

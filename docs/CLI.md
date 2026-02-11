@@ -272,6 +272,20 @@ python3 -m ledgerflow dedup manual-vs-bank --dry-run
 python3 -m ledgerflow dedup manual-vs-bank
 ```
 
+## Review Queue
+
+List review items (low-confidence transaction categorization and low-confidence source parses):
+
+```bash
+python3 -m ledgerflow review queue --date 2026-02-10 --limit 100
+```
+
+Resolve a transaction review item via CorrectionEvent patch:
+
+```bash
+python3 -m ledgerflow review resolve --tx-id tx_... --set-category groceries
+```
+
 ## Run Webapp + API Server
 
 ```bash

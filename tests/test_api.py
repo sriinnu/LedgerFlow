@@ -153,3 +153,42 @@ class TestApi(unittest.TestCase):
             # Alerts.
             ar = client.post("/api/alerts/run", json={"at": "2026-02-10", "commit": False})
             self.assertEqual(ar.status_code, 200)
+
+    def test_review_queue_and_resolve(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data_dir = Path(td) / "data"
+            app = create_app(str(data_dir))
+            client = TestClient(app)
+
+            add = client.post(
+                "/api/manual/add",
+                json={
+                    "occurredAt": "2026-02-10",
+                    "amount": {"value": "-12.30", "currency": "USD"},
+                    "merchant": "Farmers Market",
+                    "description": "",
+                    "tags": ["cash"],
+                    "links": {},
+                },
+            )
+            self.assertEqual(add.status_code, 200)
+            tx_id = add.json()["tx"]["txId"]
+
+            q1 = client.get("/api/review/queue?date=2026-02-10&limit=100")
+            self.assertEqual(q1.status_code, 200)
+            items = q1.json()["items"]
+            self.assertTrue(any((i.get("txId") == tx_id and i.get("kind") == "transaction") for i in items))
+
+            r = client.post(
+                "/api/review/resolve",
+                json={
+                    "txId": tx_id,
+                    "patch": {"category": {"id": "groceries", "confidence": 1.0, "reason": "review_resolve"}},
+                },
+            )
+            self.assertEqual(r.status_code, 200)
+
+            q2 = client.get("/api/review/queue?date=2026-02-10&limit=100")
+            self.assertEqual(q2.status_code, 200)
+            items2 = q2.json()["items"]
+            self.assertFalse(any((i.get("txId") == tx_id and i.get("kind") == "transaction") for i in items2))

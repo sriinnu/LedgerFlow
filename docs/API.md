@@ -78,6 +78,21 @@ Body (all optional):
 
 `GET /api/sources?limit=200`
 
+## Review Queue
+
+- `GET /api/review/queue?date=YYYY-MM-DD&limit=200`
+- `POST /api/review/resolve`
+
+Example resolve payload:
+
+```json
+{
+  "txId": "tx_...",
+  "patch": { "category": { "id": "groceries", "confidence": 1.0, "reason": "review_resolve" } },
+  "reason": "review_resolve"
+}
+```
+
 ## Manual Add
 
 `POST /api/manual/add`

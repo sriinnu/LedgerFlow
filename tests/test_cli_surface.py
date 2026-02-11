@@ -15,6 +15,7 @@ class TestCliSurface(unittest.TestCase):
         self.assertIn("ocr", choices)
         self.assertIn("serve", choices)
         self.assertIn("report", choices)
+        self.assertIn("review", choices)
 
     def test_ocr_extract_flags(self) -> None:
         parser = build_parser()

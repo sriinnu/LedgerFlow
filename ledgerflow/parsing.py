@@ -89,8 +89,41 @@ def _guess_merchant(lines: list[str]) -> str | None:
     return None
 
 
+def _receipt_template(lines: list[str]) -> str:
+    low_lines = [ln.lower() for ln in lines]
+    has_total = any("total" in ln for ln in low_lines)
+    has_vat = any(("vat" in ln or "tax" in ln) for ln in low_lines)
+    has_card = any(("card" in ln or "visa" in ln or "mastercard" in ln) for ln in low_lines)
+    if has_total and has_vat and has_card:
+        return "retail_pos_with_vat_and_card"
+    if has_total and has_vat:
+        return "retail_pos_with_vat"
+    if has_total:
+        return "simple_total_line"
+    return "generic_receipt"
+
+
+def _bill_template(lines: list[str], text: str) -> str:
+    low_lines = [ln.lower() for ln in lines]
+    has_due = any(("due date" in ln or "pay by" in ln) for ln in low_lines)
+    has_invoice = bool(re.search(r"\b(invoice|bill)\s*(no|number)\b", text, re.I))
+    has_meter = any(("kwh" in ln or "usage" in ln or "meter" in ln) for ln in low_lines)
+    if has_due and has_invoice and has_meter:
+        return "utility_invoice"
+    if has_due and has_invoice:
+        return "standard_invoice"
+    if has_due:
+        return "due_notice"
+    return "generic_bill"
+
+
+def _score_to_two_decimals(v: float) -> float:
+    return round(v, 2)
+
+
 def parse_receipt_text(text: str, *, default_currency: str = "USD") -> dict[str, Any]:
     lines = [ln.rstrip() for ln in text.splitlines()]
+    template = _receipt_template(lines)
     merchant = _guess_merchant(lines)
 
     date = _first_date(text)
@@ -126,13 +159,22 @@ def parse_receipt_text(text: str, *, default_currency: str = "USD") -> dict[str,
             continue
         vat.append({"rate": m.group("rate") + "%", "amount": fmt_decimal(abs(amt))})
 
-    confidence = 0.0
-    if merchant:
-        confidence += 0.3
-    if date:
-        confidence += 0.3
-    if total_amt is not None:
-        confidence += 0.4
+    confidence_breakdown = {
+        "merchant": 0.30 if merchant else 0.0,
+        "date": 0.25 if date else 0.0,
+        "total": 0.35 if total_amt is not None else 0.0,
+        "vat": 0.10 if vat else 0.0,
+    }
+    confidence = sum(confidence_breakdown.values())
+
+    missing_fields: list[str] = []
+    if not merchant:
+        missing_fields.append("merchant")
+    if not date:
+        missing_fields.append("date")
+    if total_amt is None:
+        missing_fields.append("total")
+    needs_review = confidence < 0.75 or bool(missing_fields)
 
     return {
         "type": "receipt",
@@ -140,12 +182,17 @@ def parse_receipt_text(text: str, *, default_currency: str = "USD") -> dict[str,
         "date": date,
         "total": {"value": fmt_decimal(total_amt or Decimal("0")), "currency": total_ccy} if total_amt is not None else None,
         "vat": vat,
-        "confidence": round(confidence, 2),
+        "parser": {"name": "receipt_parser", "version": "2.0", "template": template},
+        "confidenceBreakdown": {k: _score_to_two_decimals(v) for k, v in confidence_breakdown.items()},
+        "confidence": _score_to_two_decimals(confidence),
+        "missingFields": missing_fields,
+        "needsReview": needs_review,
     }
 
 
 def parse_bill_text(text: str, *, default_currency: str = "USD") -> dict[str, Any]:
     lines = [ln.rstrip() for ln in text.splitlines()]
+    template = _bill_template(lines, text)
     vendor = _guess_merchant(lines)
 
     date = _first_date(text)
@@ -173,15 +220,22 @@ def parse_bill_text(text: str, *, default_currency: str = "USD") -> dict[str, An
         currency = _normalize_currency(ccy, default_currency)
         break
 
-    confidence = 0.0
-    if vendor:
-        confidence += 0.25
-    if amount_due is not None:
-        confidence += 0.4
-    if due_date or date:
-        confidence += 0.2
-    if invoice_no:
-        confidence += 0.15
+    confidence_breakdown = {
+        "vendor": 0.25 if vendor else 0.0,
+        "amount": 0.40 if amount_due is not None else 0.0,
+        "dates": 0.20 if (due_date or date) else 0.0,
+        "invoiceNumber": 0.15 if invoice_no else 0.0,
+    }
+    confidence = sum(confidence_breakdown.values())
+
+    missing_fields: list[str] = []
+    if not vendor:
+        missing_fields.append("vendor")
+    if amount_due is None:
+        missing_fields.append("amount")
+    if not due_date and not date:
+        missing_fields.append("date_or_dueDate")
+    needs_review = confidence < 0.75 or bool(missing_fields)
 
     return {
         "type": "bill",
@@ -190,6 +244,9 @@ def parse_bill_text(text: str, *, default_currency: str = "USD") -> dict[str, An
         "dueDate": due_date,
         "amount": {"value": fmt_decimal(amount_due or Decimal("0")), "currency": currency} if amount_due is not None else None,
         "references": {"invoiceNumber": invoice_no} if invoice_no else {},
-        "confidence": round(confidence, 2),
+        "parser": {"name": "bill_parser", "version": "2.0", "template": template},
+        "confidenceBreakdown": {k: _score_to_two_decimals(v) for k, v in confidence_breakdown.items()},
+        "confidence": _score_to_two_decimals(confidence),
+        "missingFields": missing_fields,
+        "needsReview": needs_review,
     }
-

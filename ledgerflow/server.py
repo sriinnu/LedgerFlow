@@ -25,6 +25,7 @@ from .linking import link_bills_to_bank, link_receipts_to_bank
 from .manual import ManualEntry, correction_event, manual_entry_to_tx, parse_amount, tombstone_event
 from .migrations import APP_SCHEMA_VERSION, migrate_to_latest, status as migration_status
 from .reporting import daily_report_data, render_daily_report_md, monthly_report_data, render_monthly_report_md, write_daily_report, write_monthly_report
+from .review import resolve_review_transaction, review_queue
 from .sources import register_file
 from .storage import append_jsonl, ensure_dir, read_json
 from .timeutil import parse_ymd, today_ymd
@@ -251,6 +252,30 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         if isinstance(docs, list) and limit is not None and limit >= 0:
             docs = docs[-limit:]
         return {"index": {"version": idx.get("version", 1), "docs": docs}}
+
+    @app.get("/api/review/queue")
+    def api_review_queue(request: Request, date: str | None = None, limit: int = 200) -> dict[str, Any]:
+        layout = _get_layout(request)
+        try:
+            return review_queue(layout, date=date, limit=limit)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    @app.post("/api/review/resolve")
+    def api_review_resolve(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        layout = _get_layout(request)
+        tx_id = str(payload.get("txId") or "").strip()
+        patch = payload.get("patch")
+        reason = str(payload.get("reason") or "review_resolve")
+        if not tx_id:
+            raise HTTPException(status_code=400, detail="txId is required")
+        if not isinstance(patch, dict) or not patch:
+            raise HTTPException(status_code=400, detail="patch is required")
+        try:
+            evt = resolve_review_transaction(layout, tx_id=tx_id, patch=patch, reason=reason)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return {"event": evt}
 
     @app.post("/api/build")
     def api_build(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:

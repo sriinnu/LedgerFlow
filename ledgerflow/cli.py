@@ -15,6 +15,7 @@ from .layout import layout_for
 from .manual import ManualEntry, correction_event, manual_entry_to_tx, parse_amount, tombstone_event
 from .migrations import APP_SCHEMA_VERSION, migrate_to_latest, status as migration_status
 from .reporting import write_daily_report, write_monthly_report
+from .review import resolve_review_transaction, review_queue
 from .sources import register_file
 from .storage import append_jsonl
 from .alerts import run_alerts
@@ -257,6 +258,32 @@ def _cmd_export_csv(args: argparse.Namespace) -> int:
         include_deleted=args.include_deleted,
     )
     print(out)
+    return 0
+
+
+def _cmd_review_queue(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    out = review_queue(layout, date=args.date, limit=args.limit)
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
+def _cmd_review_resolve(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    patch: dict[str, object] = {}
+    if args.set_category:
+        patch["category"] = {"id": args.set_category}
+    if args.set_merchant:
+        patch["merchant"] = args.set_merchant
+    if args.set_occurred_at:
+        parse_ymd(args.set_occurred_at)
+        patch["occurredAt"] = args.set_occurred_at
+    if not patch:
+        raise SystemExit("No changes specified. Use --set-category/--set-merchant/--set-occurred-at.")
+    evt = resolve_review_transaction(layout, tx_id=args.tx_id, patch=patch, reason=args.reason)
+    print(json.dumps({"event": evt}, ensure_ascii=False))
     return 0
 
 
@@ -546,6 +573,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_ecsv.add_argument("--to-date", help="YYYY-MM-DD (inclusive)")
     p_ecsv.add_argument("--include-deleted", action="store_true")
     p_ecsv.set_defaults(func=_cmd_export_csv)
+
+    p_review = sub.add_parser("review", help="Review queue and resolution helpers.")
+    sub_review = p_review.add_subparsers(dest="review_cmd", required=True)
+
+    p_rq = sub_review.add_parser("queue", help="List transactions/source parses requiring review.")
+    p_rq.add_argument("--date", help="Optional YYYY-MM-DD filter.")
+    p_rq.add_argument("--limit", type=int, default=200)
+    p_rq.set_defaults(func=_cmd_review_queue)
+
+    p_rr = sub_review.add_parser("resolve", help="Resolve a transaction review item via CorrectionEvent patch.")
+    p_rr.add_argument("--tx-id", required=True)
+    p_rr.add_argument("--set-category")
+    p_rr.add_argument("--set-merchant")
+    p_rr.add_argument("--set-occurred-at", help="YYYY-MM-DD")
+    p_rr.add_argument("--reason", default="review_resolve")
+    p_rr.set_defaults(func=_cmd_review_resolve)
 
     p_link = sub.add_parser("link", help="Link parsed documents to ledger transactions.")
     sub_link = p_link.add_subparsers(dest="link_cmd", required=True)
