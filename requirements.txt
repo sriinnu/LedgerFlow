@@ -6,3 +6,7 @@ python-multipart
 pdfplumber
 pypdf
 pytesseract
+pillow
+
+# Optional (OpenAI OCR fallback)
+openai

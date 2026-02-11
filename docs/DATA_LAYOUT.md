@@ -26,6 +26,7 @@ data/
     ledgerflow.db
   meta/
     schema.json
+    audit.jsonl
   rules/
     categories.json
 ```

@@ -36,6 +36,14 @@ python3 -m ledgerflow ocr doctor
 python3 -m unittest discover -s tests
 ```
 
+## Lint + Type Check
+
+```bash
+python3 -m pip install ruff mypy
+ruff check ledgerflow tests
+mypy ledgerflow --ignore-missing-imports
+```
+
 ## Run CLI
 
 ```bash
@@ -55,3 +63,10 @@ LEDGERFLOW_API_KEY=change-me python3 -m ledgerflow serve --host 127.0.0.1 --port
 ```
 
 When enabled, API routes require `X-API-Key` or `Authorization: Bearer ...` (except `/api/health`).
+
+## Docker
+
+```bash
+docker build -t ledgerflow .
+docker run --rm -p 8787:8787 -v \"$PWD/data:/data\" ledgerflow
+```
