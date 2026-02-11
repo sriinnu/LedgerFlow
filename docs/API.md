@@ -27,7 +27,7 @@ Auth behavior:
 Response:
 
 ```json
-{ "status": "ok", "version": "0.1.0", "dataDir": "data", "authEnabled": false, "authMode": "local_only_no_key" }
+{ "status": "ok", "version": "0.2.0", "dataDir": "data", "authEnabled": false, "authMode": "local_only_no_key" }
 ```
 
 ## OCR

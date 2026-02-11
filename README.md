@@ -138,4 +138,5 @@ Runs:
 - Data layout: `docs/DATA_LAYOUT.md`
 - Development: `docs/DEVELOPMENT.md`
 - Roadmap status: `docs/ROADMAP.md`
+- Changelog: `CHANGELOG.md`
 - Product spec source: `SKILL.md`
