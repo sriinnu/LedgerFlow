@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Optional (bills/receipts parsing)
+pdfplumber
+pypdf
+pytesseract

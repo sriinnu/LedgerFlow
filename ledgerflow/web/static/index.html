@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LedgerFlow</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="header-inner">
+        <div class="brand">
+          <img src="/static/logo.svg" alt="LedgerFlow logo" class="brand-logo" />
+          <div>
+            <div class="brand-title">LedgerFlow</div>
+            <div class="brand-subtitle">local-first ledger</div>
+          </div>
+        </div>
+        <div class="status">
+          <div class="status-pill" id="health-pill">offline</div>
+          <div class="status-meta" id="health-meta"></div>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="card">
+        <h2>Manual Entry</h2>
+        <form id="manual-form" class="grid">
+          <label>
+            Date
+            <input name="occurredAt" type="date" />
+          </label>
+          <label>
+            Amount (negative = debit)
+            <input name="amountValue" type="text" placeholder="-12.30" required />
+          </label>
+          <label>
+            Currency
+            <input name="currency" type="text" value="USD" />
+          </label>
+          <label>
+            Merchant
+            <input name="merchant" type="text" placeholder="Farmers Market" required />
+          </label>
+          <label class="full">
+            Description
+            <input name="description" type="text" placeholder="cash vegetables" />
+          </label>
+          <label>
+            Category hint
+            <input name="categoryHint" type="text" placeholder="groceries" />
+          </label>
+          <label>
+            Tags (comma-separated)
+            <input name="tags" type="text" placeholder="cash,personal" />
+          </label>
+          <div class="actions full">
+            <button type="submit">Add Transaction</button>
+            <div class="muted" id="manual-result"></div>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Import Bank CSV</h2>
+        <form id="csv-form" class="grid">
+          <label class="full">
+            CSV file
+            <input name="file" type="file" accept=".csv,text/csv" required />
+          </label>
+          <label>
+            Mode
+            <select name="commit">
+              <option value="false" selected>Dry run</option>
+              <option value="true">Commit (write to ledger)</option>
+            </select>
+          </label>
+          <label>
+            Default currency
+            <input name="currency" type="text" value="USD" />
+          </label>
+          <label>
+            Sample (dry-run)
+            <input name="sample" type="number" value="5" min="0" />
+          </label>
+          <label class="full">
+            Date format (optional)
+            <input name="date_format" type="text" placeholder="%Y-%m-%d" />
+          </label>
+          <div class="actions full">
+            <button type="submit">Run Import</button>
+            <div class="muted" id="csv-result"></div>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Import Receipt / Bill</h2>
+        <div class="grid">
+          <form id="receipt-form" class="grid full">
+            <label class="full">
+              Receipt file (txt/pdf/image)
+              <input name="file" type="file" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf,text/plain" required />
+            </label>
+            <label>
+              Default currency
+              <input name="currency" type="text" value="USD" />
+            </label>
+            <label>
+              Copy into sources
+              <select name="copy_into_sources">
+                <option value="false" selected>No</option>
+                <option value="true">Yes</option>
+              </select>
+            </label>
+            <div class="actions full">
+              <button type="submit">Import Receipt</button>
+              <div class="muted" id="receipt-result"></div>
+            </div>
+          </form>
+
+          <form id="bill-form" class="grid full">
+            <label class="full">
+              Bill/invoice file (txt/pdf)
+              <input name="file" type="file" accept=".txt,.pdf,application/pdf,text/plain" required />
+            </label>
+            <label>
+              Default currency
+              <input name="currency" type="text" value="USD" />
+            </label>
+            <label>
+              Copy into sources
+              <select name="copy_into_sources">
+                <option value="false" selected>No</option>
+                <option value="true">Yes</option>
+              </select>
+            </label>
+            <div class="actions full">
+              <button type="submit">Import Bill</button>
+              <div class="muted" id="bill-result"></div>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Ops</h2>
+        <div class="grid">
+          <div class="actions full">
+            <button id="build-btn" type="button">Build Caches</button>
+            <div class="muted" id="build-result"></div>
+          </div>
+
+          <form id="alerts-form" class="grid full">
+            <label>
+              Alerts date
+              <input name="at" type="date" />
+            </label>
+            <label>
+              Commit
+              <select name="commit">
+                <option value="true" selected>Yes</option>
+                <option value="false">Dry run</option>
+              </select>
+            </label>
+            <div class="actions full">
+              <button type="submit">Run Alerts</button>
+              <div class="muted" id="alerts-result"></div>
+            </div>
+          </form>
+
+          <div class="actions full">
+            <button id="link-receipts-btn" type="button">Link Receipts</button>
+            <button id="link-bills-btn" type="button">Link Bills</button>
+            <div class="muted" id="link-result"></div>
+          </div>
+
+          <form id="export-form" class="grid full">
+            <label>
+              Export from
+              <input name="fromDate" type="date" />
+            </label>
+            <label>
+              Export to
+              <input name="toDate" type="date" />
+            </label>
+            <div class="actions full">
+              <button type="submit">Export CSV</button>
+              <div class="muted" id="export-result"></div>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Reports</h2>
+        <div class="grid">
+          <form id="daily-report-form" class="grid full">
+            <label>
+              Daily report date
+              <input name="date" type="date" />
+            </label>
+            <div class="actions full">
+              <button type="submit">Generate Daily</button>
+              <button id="view-daily-btn" type="button">View Daily</button>
+              <div class="muted" id="daily-report-result"></div>
+            </div>
+          </form>
+
+          <form id="monthly-report-form" class="grid full">
+            <label>
+              Monthly report (YYYY-MM)
+              <input name="month" type="text" placeholder="2026-02" />
+            </label>
+            <div class="actions full">
+              <button type="submit">Generate Monthly</button>
+              <button id="view-monthly-btn" type="button">View Monthly</button>
+              <div class="muted" id="monthly-report-result"></div>
+            </div>
+          </form>
+
+          <label class="full">
+            Preview
+            <textarea id="report-preview" rows="10"></textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Recent Transactions</h2>
+        <div class="toolbar">
+          <button id="refresh-btn" type="button">Refresh</button>
+          <label class="inline">
+            Limit
+            <input id="tx-limit" type="number" value="50" min="1" max="500" />
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="tx-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Currency</th>
+                <th>Merchant</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

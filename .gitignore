@@ -1,0 +1,22 @@
+# Local datasets and derived artifacts (financial/sensitive)
+data/inbox/
+data/sources/
+data/ledger/
+data/reports/
+data/charts/
+data/alerts/state.json
+data/alerts/events.jsonl
+data/exports/
+
+# OS/editor
+.DS_Store
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
