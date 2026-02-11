@@ -62,7 +62,8 @@ Optional API auth:
 LEDGERFLOW_API_KEY=change-me python3 -m ledgerflow serve --host 127.0.0.1 --port 8787
 ```
 
-When enabled, API routes require `X-API-Key` or `Authorization: Bearer ...` (except `/api/health`).
+Without a key, API routes are local-only by default.
+With a key, API routes require `X-API-Key` or `Authorization: Bearer ...` (except `/api/health`).
 
 ## Docker
 

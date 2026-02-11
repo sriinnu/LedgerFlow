@@ -99,7 +99,8 @@ Optional API key protection:
 LEDGERFLOW_API_KEY=change-me python3 -m ledgerflow serve --host 127.0.0.1 --port 8787
 ```
 
-When enabled, use `X-API-Key` or `Authorization: Bearer` for API requests.
+By default (no key), API access is local-only. Non-local API calls are denied.
+When key mode is enabled, use `X-API-Key` or `Authorization: Bearer` for API requests.
 
 ## 8) OCR Notes
 

@@ -20,6 +20,7 @@ class TestApi(unittest.TestCase):
             h = client.get("/api/health")
             self.assertEqual(h.status_code, 200)
             self.assertEqual(h.json()["status"], "ok")
+            self.assertEqual(h.json().get("authMode"), "local_only_no_key")
 
             caps = client.get("/api/ocr/capabilities")
             self.assertEqual(caps.status_code, 200)
@@ -204,6 +205,7 @@ class TestApi(unittest.TestCase):
             h = client.get("/api/health")
             self.assertEqual(h.status_code, 200)
             self.assertTrue(h.json().get("authEnabled"))
+            self.assertEqual(h.json().get("authMode"), "api_key")
 
             denied = client.post(
                 "/api/manual/add",
@@ -232,3 +234,22 @@ class TestApi(unittest.TestCase):
             self.assertGreaterEqual(len(items), 2)
             self.assertTrue(any(i.get("authDenied") is True for i in items))
             self.assertTrue(any(i.get("status") == 200 for i in items))
+
+    def test_non_local_without_api_key_is_denied(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data_dir = Path(td) / "data"
+            app = create_app(str(data_dir))
+            client = TestClient(app)
+
+            with patch("ledgerflow.server._is_local_client", return_value=False):
+                denied = client.post(
+                    "/api/manual/add",
+                    json={
+                        "occurredAt": "2026-02-10",
+                        "amount": {"value": "-12.30", "currency": "USD"},
+                        "merchant": "Farmers Market",
+                    },
+                )
+
+            self.assertEqual(denied.status_code, 401)
+            self.assertIn("Non-local API access requires", denied.text)

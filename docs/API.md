@@ -13,9 +13,11 @@ OpenAPI:
 
 - http://127.0.0.1:8787/docs
 
-Optional auth:
+Auth behavior:
 
-- Set `LEDGERFLOW_API_KEY=<token>` to require API key auth on `/api/*` routes (except `/api/health`).
+- Default without `LEDGERFLOW_API_KEY`: API allows local clients only (`127.0.0.1`, `::1`).
+- Non-local API access is denied unless an API key is configured.
+- With `LEDGERFLOW_API_KEY=<token>` set: `/api/*` routes (except `/api/health`) require auth header.
 - Send auth via `X-API-Key: <token>` or `Authorization: Bearer <token>`.
 
 ## Health
@@ -25,7 +27,7 @@ Optional auth:
 Response:
 
 ```json
-{ "status": "ok", "version": "0.1.0", "dataDir": "data" }
+{ "status": "ok", "version": "0.1.0", "dataDir": "data", "authEnabled": false, "authMode": "local_only_no_key" }
 ```
 
 ## OCR

@@ -93,7 +93,12 @@ Optional API protection:
 LEDGERFLOW_API_KEY=change-me python3 -m ledgerflow serve --host 127.0.0.1 --port 8787
 ```
 
-When enabled, `/api/*` (except `/api/health`) requires either:
+Auth default is already tightened:
+
+- without `LEDGERFLOW_API_KEY`, API is local-only
+- non-local API calls are denied
+
+When key mode is enabled, `/api/*` (except `/api/health`) requires either:
 
 - `X-API-Key: <token>`
 - `Authorization: Bearer <token>`

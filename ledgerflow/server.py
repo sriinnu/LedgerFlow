@@ -75,6 +75,15 @@ def _api_key_from_request(request: Request) -> str:
     return ""
 
 
+def _is_local_client(request: Request) -> bool:
+    host = (request.client.host if request.client else "") or ""
+    if host in ("127.0.0.1", "::1", "localhost", "testclient"):
+        return True
+    if host.startswith("127."):
+        return True
+    return False
+
+
 def _import_csv_from_path(
     layout: Layout,
     path: str,
@@ -165,6 +174,7 @@ def create_app(data_dir: str | None = None) -> FastAPI:
     app.state.layout = layout
     api_key = os.environ.get("LEDGERFLOW_API_KEY") or ""
     app.state.api_key_required = bool(api_key)
+    app.state.auth_mode = "api_key" if api_key else "local_only_no_key"
 
     # Ensure directories exist, but do not write defaults automatically.
     init_data_layout(layout, write_defaults=False)
@@ -174,16 +184,26 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         path = request.url.path
         method = request.method.upper()
         is_api = path.startswith("/api/")
+        is_local = _is_local_client(request)
         requires_auth = bool(api_key) and is_api and (path != "/api/health") and (method != "OPTIONS")
         denied = False
+        deny_reason = None
 
         if requires_auth:
             presented = _api_key_from_request(request)
             if presented != api_key:
                 denied = True
+                deny_reason = "missing_or_invalid_api_key"
                 response = JSONResponse(status_code=401, content={"detail": "API key required"})
             else:
                 response = await call_next(request)
+        elif is_api and (path != "/api/health") and (method != "OPTIONS") and not is_local:
+            denied = True
+            deny_reason = "non_local_client_without_api_key"
+            response = JSONResponse(
+                status_code=401,
+                content={"detail": "Non-local API access requires LEDGERFLOW_API_KEY and request auth header."},
+            )
         else:
             response = await call_next(request)
 
@@ -197,7 +217,9 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 "client": (request.client.host if request.client else None),
                 "userAgent": request.headers.get("user-agent"),
                 "authRequired": requires_auth,
+                "authMode": str(getattr(app.state, "auth_mode", "unknown")),
                 "authDenied": denied,
+                "authDenyReason": deny_reason,
             }
             try:
                 append_jsonl(layout.audit_log_path, evt)
@@ -222,6 +244,7 @@ def create_app(data_dir: str | None = None) -> FastAPI:
             "version": __version__,
             "dataDir": str(layout.data_dir),
             "authEnabled": bool(getattr(request.app.state, "api_key_required", False)),
+            "authMode": str(getattr(request.app.state, "auth_mode", "unknown")),
         }
 
     @app.get("/api/ocr/capabilities")
