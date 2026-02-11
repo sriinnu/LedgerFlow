@@ -28,7 +28,7 @@ from .reporting import daily_report_data, render_daily_report_md, monthly_report
 from .review import resolve_review_transaction, review_queue
 from .sources import register_file
 from .storage import append_jsonl, ensure_dir, read_json
-from .timeutil import parse_ymd, today_ymd
+from .timeutil import parse_ymd, today_ymd, utc_now_iso
 
 
 def _get_layout(request: Request) -> Layout:
@@ -63,6 +63,16 @@ def _save_upload_to_inbox(layout: Layout, upload: UploadFile) -> Path:
                 break
             f.write(chunk)
     return candidate
+
+
+def _api_key_from_request(request: Request) -> str:
+    header_key = request.headers.get("x-api-key")
+    if header_key:
+        return header_key.strip()
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return ""
 
 
 def _import_csv_from_path(
@@ -153,9 +163,48 @@ def create_app(data_dir: str | None = None) -> FastAPI:
 
     layout = layout_for(data_dir)
     app.state.layout = layout
+    api_key = os.environ.get("LEDGERFLOW_API_KEY") or ""
+    app.state.api_key_required = bool(api_key)
 
     # Ensure directories exist, but do not write defaults automatically.
     init_data_layout(layout, write_defaults=False)
+
+    @app.middleware("http")
+    async def auth_and_audit_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+        path = request.url.path
+        method = request.method.upper()
+        is_api = path.startswith("/api/")
+        requires_auth = bool(api_key) and is_api and (path != "/api/health") and (method != "OPTIONS")
+        denied = False
+
+        if requires_auth:
+            presented = _api_key_from_request(request)
+            if presented != api_key:
+                denied = True
+                response = JSONResponse(status_code=401, content={"detail": "API key required"})
+            else:
+                response = await call_next(request)
+        else:
+            response = await call_next(request)
+
+        if is_api and method in ("POST", "PUT", "PATCH", "DELETE"):
+            evt = {
+                "at": utc_now_iso(),
+                "method": method,
+                "path": path,
+                "query": str(request.url.query or ""),
+                "status": int(getattr(response, "status_code", 0) or 0),
+                "client": (request.client.host if request.client else None),
+                "userAgent": request.headers.get("user-agent"),
+                "authRequired": requires_auth,
+                "authDenied": denied,
+            }
+            try:
+                append_jsonl(layout.audit_log_path, evt)
+            except Exception:
+                pass
+
+        return response
 
     static_dir = Path(__file__).parent / "web" / "static"
     if static_dir.exists():
@@ -168,7 +217,12 @@ def create_app(data_dir: str | None = None) -> FastAPI:
     @app.get("/api/health")
     def health(request: Request) -> dict[str, Any]:
         layout = _get_layout(request)
-        return {"status": "ok", "version": __version__, "dataDir": str(layout.data_dir)}
+        return {
+            "status": "ok",
+            "version": __version__,
+            "dataDir": str(layout.data_dir),
+            "authEnabled": bool(getattr(request.app.state, "api_key_required", False)),
+        }
 
     @app.get("/api/ocr/capabilities")
     def api_ocr_capabilities() -> dict[str, Any]:
@@ -356,6 +410,12 @@ def create_app(data_dir: str | None = None) -> FastAPI:
     def api_alerts_events(request: Request, limit: int = 50) -> dict[str, Any]:
         layout = _get_layout(request)
         items = read_jsonl(layout.alerts_dir / "events.jsonl", limit=limit)
+        return {"items": items}
+
+    @app.get("/api/audit/events")
+    def api_audit_events(request: Request, limit: int = 100) -> dict[str, Any]:
+        layout = _get_layout(request)
+        items = read_jsonl(layout.audit_log_path, limit=limit)
         return {"items": items}
 
     @app.post("/api/export/csv")

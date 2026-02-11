@@ -13,6 +13,11 @@ OpenAPI:
 
 - http://127.0.0.1:8787/docs
 
+Optional auth:
+
+- Set `LEDGERFLOW_API_KEY=<token>` to require API key auth on `/api/*` routes (except `/api/health`).
+- Send auth via `X-API-Key: <token>` or `Authorization: Bearer <token>`.
+
 ## Health
 
 `GET /api/health`
@@ -266,6 +271,10 @@ Fetch markdown:
 
 - `POST /api/alerts/run` body: `{ "at": "2026-02-10", "commit": true }`
 - `GET /api/alerts/events?limit=50`
+
+## Audit
+
+- `GET /api/audit/events?limit=100`
 
 ## Export
 

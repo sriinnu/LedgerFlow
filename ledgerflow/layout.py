@@ -72,6 +72,10 @@ class Layout:
     def schema_state_path(self) -> Path:
         return self.meta_dir / "schema.json"
 
+    @property
+    def audit_log_path(self) -> Path:
+        return self.meta_dir / "audit.jsonl"
+
 
 def layout_for(data_dir: str | Path) -> Layout:
     return Layout(Path(data_dir))

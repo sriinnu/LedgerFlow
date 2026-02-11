@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -192,3 +193,42 @@ class TestApi(unittest.TestCase):
             self.assertEqual(q2.status_code, 200)
             items2 = q2.json()["items"]
             self.assertFalse(any((i.get("txId") == tx_id and i.get("kind") == "transaction") for i in items2))
+
+    def test_api_key_auth_and_audit_log(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data_dir = Path(td) / "data"
+            with patch.dict("os.environ", {"LEDGERFLOW_API_KEY": "secret-key"}, clear=False):
+                app = create_app(str(data_dir))
+            client = TestClient(app)
+
+            h = client.get("/api/health")
+            self.assertEqual(h.status_code, 200)
+            self.assertTrue(h.json().get("authEnabled"))
+
+            denied = client.post(
+                "/api/manual/add",
+                json={
+                    "occurredAt": "2026-02-10",
+                    "amount": {"value": "-12.30", "currency": "USD"},
+                    "merchant": "Farmers Market",
+                },
+            )
+            self.assertEqual(denied.status_code, 401)
+
+            ok = client.post(
+                "/api/manual/add",
+                headers={"x-api-key": "secret-key"},
+                json={
+                    "occurredAt": "2026-02-10",
+                    "amount": {"value": "-12.30", "currency": "USD"},
+                    "merchant": "Farmers Market",
+                },
+            )
+            self.assertEqual(ok.status_code, 200)
+
+            events = client.get("/api/audit/events?limit=20", headers={"x-api-key": "secret-key"})
+            self.assertEqual(events.status_code, 200)
+            items = events.json()["items"]
+            self.assertGreaterEqual(len(items), 2)
+            self.assertTrue(any(i.get("authDenied") is True for i in items))
+            self.assertTrue(any(i.get("status") == 200 for i in items))

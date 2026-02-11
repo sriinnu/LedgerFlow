@@ -47,3 +47,11 @@ python3 -m ledgerflow --help
 ```bash
 python3 -m ledgerflow serve --host 127.0.0.1 --port 8787
 ```
+
+Optional API auth:
+
+```bash
+LEDGERFLOW_API_KEY=change-me python3 -m ledgerflow serve --host 127.0.0.1 --port 8787
+```
+
+When enabled, API routes require `X-API-Key` or `Authorization: Bearer ...` (except `/api/health`).
