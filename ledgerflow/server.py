@@ -174,14 +174,35 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         return ocr_capabilities()
 
     @app.post("/api/ocr/extract-upload")
-    def api_ocr_extract_upload(request: Request, file: UploadFile = File(...)) -> dict[str, Any]:
+    def api_ocr_extract_upload(
+        request: Request,
+        file: UploadFile = File(...),
+        image_provider: str = Form(default="auto"),
+        preprocess: bool = Form(default=True),
+    ) -> dict[str, Any]:
         layout = _get_layout(request)
         saved = _save_upload_to_inbox(layout, file)
         try:
-            text, meta = extract_text(saved)
+            text, meta = extract_text(saved, image_provider=str(image_provider), preprocess=bool(preprocess))
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         return {"savedPath": str(saved), "meta": meta, "text": text}
+
+    @app.post("/api/ocr/extract-path")
+    def api_ocr_extract_path(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        _ = _get_layout(request)
+        path = str(payload.get("path") or "").strip()
+        if not path:
+            raise HTTPException(status_code=400, detail="path is required")
+        try:
+            text, meta = extract_text(
+                path,
+                image_provider=str(payload.get("imageProvider") or "auto"),
+                preprocess=bool(payload.get("preprocess") if "preprocess" in payload else True),
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return {"path": path, "meta": meta, "text": text}
 
     @app.post("/api/init")
     def api_init(request: Request, write_defaults: bool = Body(default=False)) -> dict[str, Any]:
@@ -498,6 +519,8 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         file: UploadFile = File(...),
         currency: str = Form(default="USD"),
         copy_into_sources: bool = Form(default=False),
+        image_provider: str = Form(default="auto"),
+        preprocess: bool = Form(default=True),
     ) -> JSONResponse:
         layout = _get_layout(request)
         saved = _save_upload_to_inbox(layout, file)
@@ -507,6 +530,8 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 saved,
                 copy_into_sources=bool(copy_into_sources),
                 default_currency=str(currency),
+                image_provider=str(image_provider),
+                preprocess=bool(preprocess),
             )
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
@@ -518,6 +543,8 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         file: UploadFile = File(...),
         currency: str = Form(default="USD"),
         copy_into_sources: bool = Form(default=False),
+        image_provider: str = Form(default="auto"),
+        preprocess: bool = Form(default=True),
     ) -> JSONResponse:
         layout = _get_layout(request)
         saved = _save_upload_to_inbox(layout, file)
@@ -527,6 +554,8 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 saved,
                 copy_into_sources=bool(copy_into_sources),
                 default_currency=str(currency),
+                image_provider=str(image_provider),
+                preprocess=bool(preprocess),
             )
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e)) from e

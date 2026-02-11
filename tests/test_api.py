@@ -51,6 +51,24 @@ class TestApi(unittest.TestCase):
             txs = client.get("/api/transactions?limit=10").json()["items"]
             self.assertEqual(len(txs), 1)
 
+    def test_ocr_extract_path_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data_dir = Path(td) / "data"
+            app = create_app(str(data_dir))
+            client = TestClient(app)
+
+            txt = Path(td) / "receipt.txt"
+            txt.write_text("HELLO OCR", encoding="utf-8")
+
+            r = client.post(
+                "/api/ocr/extract-path",
+                json={"path": str(txt), "imageProvider": "auto", "preprocess": True},
+            )
+            self.assertEqual(r.status_code, 200)
+            j = r.json()
+            self.assertEqual(j["meta"]["method"], "text")
+            self.assertEqual(j["text"], "HELLO OCR")
+
     def test_import_csv_upload_commit_and_dedup(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             data_dir = Path(td) / "data"

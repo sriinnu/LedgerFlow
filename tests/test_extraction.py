@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +10,12 @@ from ledgerflow.extraction import MissingDependencyError, extract_text, ocr_capa
 
 
 class TestExtraction(unittest.TestCase):
+    @staticmethod
+    def _write_tiny_png(path: Path) -> None:
+        # 1x1 px transparent PNG.
+        raw = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO3Zf9sAAAAASUVORK5CYII=")
+        path.write_bytes(raw)
+
     def test_extract_text_plain_text(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "sample.txt"
@@ -26,7 +33,7 @@ class TestExtraction(unittest.TestCase):
     def test_image_ocr_fallback_tesseract_cli(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "sample.png"
-            p.write_bytes(b"not-an-image")
+            self._write_tiny_png(p)
 
             with patch("ledgerflow.extraction._import_pytesseract", side_effect=ModuleNotFoundError()):
                 with patch("ledgerflow.extraction.shutil.which", return_value="/usr/bin/tesseract"):
@@ -43,9 +50,9 @@ class TestExtraction(unittest.TestCase):
     def test_image_ocr_missing_deps(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "sample.png"
-            p.write_bytes(b"not-an-image")
+            self._write_tiny_png(p)
             with patch("ledgerflow.extraction._import_pytesseract", side_effect=ModuleNotFoundError()):
                 with patch("ledgerflow.extraction.shutil.which", return_value=None):
-                    with self.assertRaises(MissingDependencyError):
-                        extract_text(p)
-
+                    with patch("ledgerflow.extraction._openai_vision_available", return_value=False):
+                        with self.assertRaises(MissingDependencyError):
+                            extract_text(p, image_provider="auto")

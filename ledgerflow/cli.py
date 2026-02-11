@@ -347,6 +347,8 @@ def _cmd_import_receipt(args: argparse.Namespace) -> int:
         args.path,
         copy_into_sources=args.copy_into_sources,
         default_currency=args.currency,
+        image_provider=args.image_provider,
+        preprocess=not args.no_preprocess,
     )
     print(json.dumps({"docId": res["doc"]["docId"], "parse": res["parse"]}, ensure_ascii=False))
     return 0
@@ -360,6 +362,8 @@ def _cmd_import_bill(args: argparse.Namespace) -> int:
         args.path,
         copy_into_sources=args.copy_into_sources,
         default_currency=args.currency,
+        image_provider=args.image_provider,
+        preprocess=not args.no_preprocess,
     )
     print(json.dumps({"docId": res["doc"]["docId"], "parse": res["parse"]}, ensure_ascii=False))
     return 0
@@ -413,7 +417,7 @@ def _cmd_ocr_doctor(args: argparse.Namespace) -> int:
 
 
 def _cmd_ocr_extract(args: argparse.Namespace) -> int:
-    text, meta = extract_text(args.path)
+    text, meta = extract_text(args.path, image_provider=args.image_provider, preprocess=not args.no_preprocess)
     if args.json:
         print(json.dumps({"path": args.path, "meta": meta, "text": text}, ensure_ascii=False))
     else:
@@ -577,6 +581,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_ocr_ext = sub_ocr.add_parser("extract", help="Extract text from txt/pdf/image.")
     p_ocr_ext.add_argument("path")
+    p_ocr_ext.add_argument(
+        "--image-provider",
+        default="auto",
+        choices=("auto", "pytesseract", "tesseract", "openai"),
+        help="Image OCR backend (for image files only).",
+    )
+    p_ocr_ext.add_argument(
+        "--no-preprocess",
+        action="store_true",
+        help="Disable image preprocessing variants for OCR.",
+    )
     p_ocr_ext.add_argument("--json", action="store_true", help="Emit JSON with metadata.")
     p_ocr_ext.set_defaults(func=_cmd_ocr_extract)
 
@@ -612,12 +627,34 @@ def build_parser() -> argparse.ArgumentParser:
     p_irec.add_argument("path")
     p_irec.add_argument("--currency", default="USD", help="Default currency when not detected.")
     p_irec.add_argument("--copy-into-sources", action="store_true")
+    p_irec.add_argument(
+        "--image-provider",
+        default="auto",
+        choices=("auto", "pytesseract", "tesseract", "openai"),
+        help="Image OCR backend (for image files only).",
+    )
+    p_irec.add_argument(
+        "--no-preprocess",
+        action="store_true",
+        help="Disable image preprocessing variants for OCR.",
+    )
     p_irec.set_defaults(func=_cmd_import_receipt)
 
     p_ibill = sub_import.add_parser("bill", help="Import + parse a bill/invoice (PDF/text).")
     p_ibill.add_argument("path")
     p_ibill.add_argument("--currency", default="USD", help="Default currency when not detected.")
     p_ibill.add_argument("--copy-into-sources", action="store_true")
+    p_ibill.add_argument(
+        "--image-provider",
+        default="auto",
+        choices=("auto", "pytesseract", "tesseract", "openai"),
+        help="Image OCR backend (for image files only).",
+    )
+    p_ibill.add_argument(
+        "--no-preprocess",
+        action="store_true",
+        help="Disable image preprocessing variants for OCR.",
+    )
     p_ibill.set_defaults(func=_cmd_import_bill)
 
     p_serve = sub.add_parser("serve", help="Run the LedgerFlow webapp + API server.")

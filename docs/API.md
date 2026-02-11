@@ -31,7 +31,13 @@ Capabilities:
 
 Extract text from uploaded file:
 
-- `POST /api/ocr/extract-upload` (multipart/form-data, field `file`)
+- `POST /api/ocr/extract-upload` (multipart/form-data)
+- fields: `file`, `image_provider` (`auto|pytesseract|tesseract|openai`), `preprocess` (`true|false`)
+
+Extract text from a file path:
+
+- `POST /api/ocr/extract-path`
+- body: `{ "path": "...", "imageProvider": "auto", "preprocess": true }`
 
 ## Index / Migrations
 
@@ -191,6 +197,8 @@ Fields:
 - `file` (required)
 - `currency` (default `USD`)
 - `copy_into_sources` (`true|false`, default `false`)
+- `image_provider` (`auto|pytesseract|tesseract|openai`, default `auto`)
+- `preprocess` (`true|false`, default `true`)
 
 `POST /api/import/bill-upload` (multipart/form-data)
 
@@ -199,6 +207,8 @@ Fields:
 - `file` (required)
 - `currency` (default `USD`)
 - `copy_into_sources` (`true|false`, default `false`)
+- `image_provider` (`auto|pytesseract|tesseract|openai`, default `auto`)
+- `preprocess` (`true|false`, default `true`)
 
 ## Link Receipts
 

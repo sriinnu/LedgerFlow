@@ -21,6 +21,8 @@ def import_and_parse_receipt(
     *,
     copy_into_sources: bool = False,
     default_currency: str = "USD",
+    image_provider: str = "auto",
+    preprocess: bool = True,
 ) -> dict[str, Any]:
     doc = register_file(
         layout.sources_dir,
@@ -32,7 +34,7 @@ def import_and_parse_receipt(
     doc_id = doc["docId"]
     doc_dir = _doc_dir(layout, doc_id)
 
-    text, meta = extract_text(path)
+    text, meta = extract_text(path, image_provider=image_provider, preprocess=preprocess)
     (doc_dir / "raw.txt").write_text(text, encoding="utf-8")
 
     parsed = parse_receipt_text(text, default_currency=default_currency)
@@ -50,6 +52,8 @@ def import_and_parse_bill(
     *,
     copy_into_sources: bool = False,
     default_currency: str = "USD",
+    image_provider: str = "auto",
+    preprocess: bool = True,
 ) -> dict[str, Any]:
     doc = register_file(
         layout.sources_dir,
@@ -61,7 +65,7 @@ def import_and_parse_bill(
     doc_id = doc["docId"]
     doc_dir = _doc_dir(layout, doc_id)
 
-    text, meta = extract_text(path)
+    text, meta = extract_text(path, image_provider=image_provider, preprocess=preprocess)
     (doc_dir / "raw.txt").write_text(text, encoding="utf-8")
 
     parsed = parse_bill_text(text, default_currency=default_currency)
@@ -71,4 +75,3 @@ def import_and_parse_bill(
 
     write_json(doc_dir / "parse.json", parsed)
     return {"doc": doc, "parse": parsed}
-

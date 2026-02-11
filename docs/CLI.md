@@ -83,7 +83,13 @@ Extract text directly:
 ```bash
 python3 -m ledgerflow ocr extract data/inbox/receipts/receipt.jpg
 python3 -m ledgerflow ocr extract data/inbox/bills/invoice.pdf --json
+python3 -m ledgerflow ocr extract data/inbox/receipts/receipt.jpg --image-provider tesseract --no-preprocess
 ```
+
+Image OCR controls:
+
+- `--image-provider auto|pytesseract|tesseract|openai` (default `auto`)
+- `--no-preprocess` disables variant scoring (`gray/auto/bw/upscaled`)
 
 ## Import Bank CSV
 
@@ -121,6 +127,7 @@ Import + parse a receipt (supports `*.txt` out of the box; `*.pdf`/images requir
 
 ```bash
 python3 -m ledgerflow import receipt data/inbox/receipts/receipt.txt --currency USD
+python3 -m ledgerflow import receipt data/inbox/receipts/receipt.jpg --image-provider openai
 ```
 
 Import + parse a bill/invoice:
@@ -128,6 +135,11 @@ Import + parse a bill/invoice:
 ```bash
 python3 -m ledgerflow import bill data/inbox/bills/invoice.txt --currency USD
 ```
+
+`import receipt` / `import bill` also accept:
+
+- `--image-provider auto|pytesseract|tesseract|openai`
+- `--no-preprocess`
 
 ## Auto-Link Receipts To Bank Transactions
 
