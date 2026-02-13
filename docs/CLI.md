@@ -261,8 +261,20 @@ python3 -m ledgerflow ai analyze --month 2026-02 --provider ollama --model llama
 Flags:
 
 - `--provider auto|heuristic|ollama|openai`
-- `--model <name>` (optional override)
-- `--lookback-months <n>` (default: `6`)
+- `--model <name>` (optional override; OpenAI default: `gpt-4.1-mini`, Ollama default: `OLLAMA_MODEL` or `llama3.1:8b`)
+- `--lookback-months <n>` (default: `6`, including the target month)
+- `--json` (emit the full JSON payload instead of narrative + bullet formatting)
+
+Provider behavior:
+
+- `auto` tries `ollama`, then `openai`, then local `heuristic` fallback.
+- `heuristic` stays local and does not call external model APIs.
+- `ollama` and `openai` try only the selected provider, with heuristic fallback output if that provider fails.
+
+Provider environment variables:
+
+- OpenAI: `OPENAI_API_KEY`
+- Ollama: `OLLAMA_URL` (default `http://127.0.0.1:11434/api/generate`) and optional `OLLAMA_MODEL`
 
 ## Alerts
 

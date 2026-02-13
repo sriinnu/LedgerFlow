@@ -78,6 +78,16 @@ python3 -m ledgerflow ai analyze --month 2026-02 --provider ollama --model llama
 python3 -m ledgerflow ai analyze --month 2026-02 --provider auto --json
 ```
 
+Notes:
+
+- `--provider auto` tries `ollama` first, then `openai`, then falls back to local `heuristic`.
+- `--lookback-months` defaults to `6` months (including the target month).
+- `--json` prints the full analysis payload for automation/API-style consumption.
+- `--model` overrides provider defaults. Without an override, OpenAI uses `gpt-4.1-mini`; Ollama uses `OLLAMA_MODEL` or `llama3.1:8b`.
+- Provider environment variables:
+  - OpenAI: `OPENAI_API_KEY`
+  - Ollama: `OLLAMA_URL` (default `http://127.0.0.1:11434/api/generate`) and optional `OLLAMA_MODEL`
+
 ## OCR Through CLI
 
 ```bash

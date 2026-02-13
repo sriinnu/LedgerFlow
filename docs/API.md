@@ -273,7 +273,7 @@ Fetch markdown:
 
 - `POST /api/ai/analyze`
 
-Example payload:
+Request body:
 
 ```json
 {
@@ -284,12 +284,36 @@ Example payload:
 }
 ```
 
-Providers:
+Request defaults:
 
-- `auto` (tries `ollama`, then `openai`, then local heuristic)
-- `heuristic` (no external model calls)
-- `ollama` (local model endpoint)
-- `openai`
+- `month` defaults to the current month (`YYYY-MM`)
+- `provider` defaults to `auto`
+- `lookbackMonths` defaults to `6`
+- `model` is optional and provider-specific
+
+Provider behavior:
+
+- `auto`: tries `ollama`, then `openai`, then falls back to local heuristic output.
+- `heuristic`: local analysis only, no model API calls.
+- `ollama`: local model call via `OLLAMA_URL`; falls back to heuristic narrative on failure.
+- `openai`: OpenAI Responses API call; falls back to heuristic narrative on failure.
+
+Provider environment variables:
+
+- OpenAI: `OPENAI_API_KEY`
+- Ollama: `OLLAMA_URL` (default `http://127.0.0.1:11434/api/generate`) and optional `OLLAMA_MODEL`
+
+Response shape (`200`):
+
+- `month`, `generatedAt`
+- `providerRequested`, `providerUsed`, `model`
+- `currency`
+- `summary` (target-month `spend`, `income`, `net`)
+- `quality` (`totalSpend`, `unclassifiedSpend`, `unclassifiedPct`, `manualSpend`, `manualPct`)
+- `topCategories`, `topMerchants`
+- `riskFlags`, `insights`, `narrative`
+- `datasets.monthlySpendTrend`, `datasets.categoryTrend`, `datasets.spendForecast`
+- `llmError` (set when a model provider fails and heuristic fallback is used)
 
 ## Alerts
 

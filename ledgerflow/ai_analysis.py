@@ -54,11 +54,10 @@ def _decimal_avg(values: list[Decimal]) -> Decimal:
     return sum(values, Decimal("0")) / Decimal(str(len(values)))
 
 
-def _series_by_currency(layout: Layout, months: list[str]) -> dict[str, list[dict[str, Any]]]:
-    view = load_ledger(layout, include_deleted=False)
+def _series_by_currency(transactions: list[dict[str, Any]], months: list[str]) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for month in months:
-        txs = filter_by_month(view.transactions, month)
+        txs = filter_by_month(transactions, month)
         by_ccy: dict[str, dict[str, Decimal]] = defaultdict(lambda: {"spend": Decimal("0"), "income": Decimal("0"), "net": Decimal("0")})
         for tx in txs:
             ccy = tx_currency(tx) or "UNK"
@@ -99,9 +98,10 @@ def _choose_primary_currency(series_by_ccy: dict[str, list[dict[str, Any]]], tar
     return next(iter(series_by_ccy.keys()), "UNK")
 
 
-def _top_categories_for_month(layout: Layout, *, month: str, currency: str, limit: int = 8) -> list[dict[str, Any]]:
-    view = load_ledger(layout, include_deleted=False)
-    txs = filter_by_month(view.transactions, month)
+def _top_categories_for_month(
+    transactions: list[dict[str, Any]], *, month: str, currency: str, limit: int = 8
+) -> list[dict[str, Any]]:
+    txs = filter_by_month(transactions, month)
     totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     for tx in txs:
         if tx_currency(tx) != currency:
@@ -115,9 +115,10 @@ def _top_categories_for_month(layout: Layout, *, month: str, currency: str, limi
     return [{"categoryId": k, "value": fmt_decimal(v), "currency": currency} for k, v in rows]
 
 
-def _top_merchants_for_month(layout: Layout, *, month: str, currency: str, limit: int = 8) -> list[dict[str, Any]]:
-    view = load_ledger(layout, include_deleted=False)
-    txs = filter_by_month(view.transactions, month)
+def _top_merchants_for_month(
+    transactions: list[dict[str, Any]], *, month: str, currency: str, limit: int = 8
+) -> list[dict[str, Any]]:
+    txs = filter_by_month(transactions, month)
     totals: dict[str, dict[str, Any]] = {}
     for tx in txs:
         if tx_currency(tx) != currency:
@@ -134,13 +135,14 @@ def _top_merchants_for_month(layout: Layout, *, month: str, currency: str, limit
     return [{"merchant": k, "value": fmt_decimal(v["value"]), "count": int(v["count"]), "currency": currency} for k, v in rows]
 
 
-def _category_trend(layout: Layout, *, months: list[str], currency: str, top_categories: list[str]) -> list[dict[str, Any]]:
-    view = load_ledger(layout, include_deleted=False)
+def _category_trend(
+    transactions: list[dict[str, Any]], *, months: list[str], currency: str, top_categories: list[str]
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for cat in top_categories:
         points = []
         for month in months:
-            txs = filter_by_month(view.transactions, month)
+            txs = filter_by_month(transactions, month)
             total = Decimal("0")
             for tx in txs:
                 if tx_currency(tx) != currency:
@@ -178,9 +180,8 @@ def _forecast_spend(month_points: list[dict[str, Any]], *, months_forward: int =
     return out
 
 
-def _quality_metrics(layout: Layout, *, month: str, currency: str) -> dict[str, str]:
-    view = load_ledger(layout, include_deleted=False)
-    txs = filter_by_month(view.transactions, month)
+def _quality_metrics(transactions: list[dict[str, Any]], *, month: str, currency: str) -> dict[str, str]:
+    txs = filter_by_month(transactions, month)
     total_spend = Decimal("0")
     unclassified = Decimal("0")
     manual_spend = Decimal("0")
@@ -320,18 +321,19 @@ def analyze_spending(
 ) -> dict[str, Any]:
     target = _parse_month(month).as_key()
     months = _month_sequence(_parse_month(target), lookback_months=max(1, lookback_months))
-    series_by_ccy = _series_by_currency(layout, months)
+    transactions = load_ledger(layout, include_deleted=False).transactions
+    series_by_ccy = _series_by_currency(transactions, months)
     primary_currency = _choose_primary_currency(series_by_ccy, target)
     month_points = series_by_ccy.get(primary_currency, [])
 
-    top_categories = _top_categories_for_month(layout, month=target, currency=primary_currency, limit=8)
-    top_merchants = _top_merchants_for_month(layout, month=target, currency=primary_currency, limit=8)
+    top_categories = _top_categories_for_month(transactions, month=target, currency=primary_currency, limit=8)
+    top_merchants = _top_merchants_for_month(transactions, month=target, currency=primary_currency, limit=8)
     category_ids = [row["categoryId"] for row in top_categories[:5]]
-    quality = _quality_metrics(layout, month=target, currency=primary_currency)
+    quality = _quality_metrics(transactions, month=target, currency=primary_currency)
     risk_flags, insights = _heuristic_insights(month=target, month_points=month_points, top_categories=top_categories, quality=quality)
     heuristic_narrative = _heuristic_narrative(month=target, currency=primary_currency, month_points=month_points, insights=insights)
     forecast = _forecast_spend(month_points, months_forward=3)
-    cat_trend = _category_trend(layout, months=months, currency=primary_currency, top_categories=category_ids)
+    cat_trend = _category_trend(transactions, months=months, currency=primary_currency, top_categories=category_ids)
 
     context = {
         "month": target,

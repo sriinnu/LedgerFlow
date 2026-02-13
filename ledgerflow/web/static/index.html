@@ -250,6 +250,7 @@
             Spend Series
             <canvas id="series-canvas" width="1000" height="260"></canvas>
           </label>
+          <div class="full muted chart-summary" id="series-summary"></div>
           <label class="full chart-block">
             Category Breakdown
             <canvas id="category-canvas" width="1000" height="300"></canvas>
@@ -288,6 +289,24 @@
           <div class="actions full">
             <button id="ai-run-btn" type="button">Run AI Analysis</button>
             <div class="muted" id="ai-result"></div>
+          </div>
+          <div class="full ai-summary" id="ai-summary">
+            <div class="ai-summary-item">
+              <span class="ai-summary-label">Provider used</span>
+              <span class="ai-summary-value" id="ai-summary-provider">-</span>
+            </div>
+            <div class="ai-summary-item">
+              <span class="ai-summary-label">Risk flags</span>
+              <span class="ai-summary-value" id="ai-summary-risks">0</span>
+            </div>
+            <div class="ai-summary-item">
+              <span class="ai-summary-label">Lookback months</span>
+              <span class="ai-summary-value" id="ai-summary-lookback">-</span>
+            </div>
+            <div class="ai-summary-item">
+              <span class="ai-summary-label">Fallback note</span>
+              <span class="ai-summary-value" id="ai-summary-fallback">Not run yet.</span>
+            </div>
           </div>
           <label class="full">
             Narrative
