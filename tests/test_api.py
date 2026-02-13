@@ -308,6 +308,45 @@ class TestApi(unittest.TestCase):
             self.assertTrue(ctx.json().get("authenticated"))
             self.assertIn("write", ctx.json().get("scopes") or [])
 
+    def test_scoped_api_keys_disabled_and_expired(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data_dir = Path(td) / "data"
+            scoped = json.dumps(
+                [
+                    {"id": "disabled", "key": "off-key", "scopes": ["write"], "enabled": False},
+                    {"id": "expired", "key": "old-key", "scopes": ["write"], "expiresAt": "2020-01-01T00:00:00Z"},
+                    {"id": "active", "key": "good-key", "scopes": ["write"], "expiresAt": "2099-01-01T00:00:00Z"},
+                ]
+            )
+            with patch.dict("os.environ", {"LEDGERFLOW_API_KEYS": scoped, "LEDGERFLOW_API_KEY": ""}, clear=False):
+                app = create_app(str(data_dir))
+            client = TestClient(app)
+
+            r1 = client.post(
+                "/api/manual/add",
+                headers={"x-api-key": "off-key"},
+                json={"occurredAt": "2026-02-10", "amount": {"value": "-10", "currency": "USD"}, "merchant": "x"},
+            )
+            self.assertEqual(r1.status_code, 401)
+
+            r2 = client.post(
+                "/api/manual/add",
+                headers={"x-api-key": "old-key"},
+                json={"occurredAt": "2026-02-10", "amount": {"value": "-10", "currency": "USD"}, "merchant": "x"},
+            )
+            self.assertEqual(r2.status_code, 401)
+
+            r3 = client.post(
+                "/api/manual/add",
+                headers={"x-api-key": "good-key"},
+                json={"occurredAt": "2026-02-10", "amount": {"value": "-10", "currency": "USD"}, "merchant": "x"},
+            )
+            self.assertEqual(r3.status_code, 200)
+
+            keys = client.get("/api/auth/keys", headers={"x-api-key": "good-key"})
+            self.assertEqual(keys.status_code, 200)
+            self.assertGreaterEqual(keys.json().get("count") or 0, 3)
+
     def test_automation_and_bank_json_api_endpoints(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             data_dir = Path(td) / "data"
@@ -322,6 +361,10 @@ class TestApi(unittest.TestCase):
             tasks = client.get("/api/automation/tasks?limit=20")
             self.assertEqual(tasks.status_code, 200)
             self.assertGreaterEqual(tasks.json()["count"], 1)
+
+            stats1 = client.get("/api/automation/stats")
+            self.assertEqual(stats1.status_code, 200)
+            self.assertIn("counts", stats1.json())
 
             run1 = client.post("/api/automation/run-next", json={"workerId": "api-test"})
             self.assertEqual(run1.status_code, 200)
@@ -348,6 +391,10 @@ class TestApi(unittest.TestCase):
             self.assertEqual(due.status_code, 200)
             self.assertEqual(due.json().get("created"), 1)
 
+            disp = client.post("/api/automation/dispatch", json={"runDue": True, "at": "2026-02-10T09:10:00Z", "maxTasks": 5})
+            self.assertEqual(disp.status_code, 200)
+            self.assertIn("queueStats", disp.json())
+
             bank_json = Path(td) / "bank.json"
             bank_json.write_text(
                 json.dumps(
@@ -367,3 +414,40 @@ class TestApi(unittest.TestCase):
             )
             self.assertEqual(bj.status_code, 200)
             self.assertEqual(bj.json().get("imported"), 2)
+
+            nested = Path(td) / "bank_nested.json"
+            nested.write_text(
+                json.dumps(
+                    {
+                        "transactions": [
+                            {
+                                "meta": {"date": "2026-02-12", "merchant": {"name": "Metro"}},
+                                "money": {"value": "-7.25", "currency": "USD"},
+                                "notes": {"text": "subway"},
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            bj2 = client.post(
+                "/api/import/bank-json-path",
+                json={
+                    "path": str(nested),
+                    "commit": True,
+                    "currency": "USD",
+                    "mapping": {
+                        "date": "meta.date",
+                        "merchant": "meta.merchant.name",
+                        "amount": "money.value",
+                        "currency": "money.currency",
+                        "description": "notes.text",
+                    },
+                },
+            )
+            self.assertEqual(bj2.status_code, 200)
+            self.assertEqual(bj2.json().get("imported"), 1)
+
+            dead = client.get("/api/automation/dead-letters?limit=20")
+            self.assertEqual(dead.status_code, 200)
+            self.assertIn("items", dead.json())

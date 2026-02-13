@@ -10,9 +10,10 @@ from .alerts import run_alerts
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
 from .ids import new_id
+from .jsonl import read_jsonl
 from .layout import Layout
 from .reporting import write_daily_report, write_monthly_report
-from .storage import read_json, write_json
+from .storage import append_jsonl, read_json, write_json
 from .timeutil import today_ymd, utc_now_iso
 
 
@@ -56,6 +57,42 @@ def list_tasks(layout: Layout, *, limit: int = 100, status: str | None = None) -
     if limit >= 0:
         items = items[-limit:]
     return items
+
+
+def queue_stats(layout: Layout) -> dict[str, Any]:
+    doc = _queue_doc(layout)
+    tasks = [x for x in doc.get("tasks", []) if isinstance(x, dict)]
+    counts: dict[str, int] = {}
+    now = _now()
+    due_queued = 0
+    oldest_queued_at: str | None = None
+    newest_finished_at: str | None = None
+    for t in tasks:
+        st = str(t.get("status") or "unknown")
+        counts[st] = counts.get(st, 0) + 1
+        if st == "queued":
+            at = str(t.get("availableAt") or "")
+            if at and _parse_ts(at) <= now:
+                due_queued += 1
+            if at and (oldest_queued_at is None or at < oldest_queued_at):
+                oldest_queued_at = at
+        if st in ("done", "failed"):
+            fin = str(t.get("finishedAt") or "")
+            if fin and (newest_finished_at is None or fin > newest_finished_at):
+                newest_finished_at = fin
+    dead_letters = read_jsonl(layout.automation_dead_letters_path, limit=None)
+    return {
+        "counts": counts,
+        "total": len(tasks),
+        "dueQueued": due_queued,
+        "oldestQueuedAt": oldest_queued_at,
+        "latestFinishedAt": newest_finished_at,
+        "deadLetterCount": len(dead_letters),
+    }
+
+
+def list_dead_letters(layout: Layout, *, limit: int = 100) -> list[dict[str, Any]]:
+    return read_jsonl(layout.automation_dead_letters_path, limit=limit)
 
 
 def enqueue_task(
@@ -153,6 +190,20 @@ def _finish_task(layout: Layout, *, task_id: str, status: str, result: dict[str,
         break
     doc["tasks"] = tasks
     _write_queue(layout, doc)
+    if status == "failed" and found is not None:
+        append_jsonl(
+            layout.automation_dead_letters_path,
+            {
+                "at": utc_now_iso(),
+                "taskId": str(found.get("taskId") or ""),
+                "taskType": str(found.get("taskType") or ""),
+                "attempts": int(found.get("attempts") or 0),
+                "maxRetries": int(found.get("maxRetries") or 0),
+                "error": str(found.get("error") or error or ""),
+                "source": str(found.get("source") or ""),
+                "task": found,
+            },
+        )
     return found
 
 
@@ -248,6 +299,23 @@ def run_worker(
         if poll_seconds > 0:
             time.sleep(poll_seconds)
     return {"processed": processed, "done": done, "failed": failed, "retried": retried}
+
+
+def dispatch_due_and_work(
+    layout: Layout,
+    *,
+    run_due: bool = True,
+    at: str | None = None,
+    worker_id: str = "dispatcher",
+    max_tasks: int = 10,
+    poll_seconds: float = 0.0,
+) -> dict[str, Any]:
+    due = {"created": 0, "createdJobIds": [], "skippedJobIds": []}
+    if run_due:
+        due = enqueue_due_jobs(layout, at=at)
+    work = run_worker(layout, worker_id=worker_id, max_tasks=max_tasks, poll_seconds=poll_seconds)
+    stats = queue_stats(layout)
+    return {"due": due, "worker": work, "queueStats": stats}
 
 
 def _load_jobs(layout: Layout) -> list[dict[str, Any]]:
@@ -355,6 +423,38 @@ def read_jobs(layout: Layout) -> dict[str, Any]:
     return read_json(layout.automation_jobs_path, {"version": 1, "jobs": []})
 
 
+def _validate_hhmm(value: str) -> None:
+    s = str(value or "").strip()
+    if len(s) != 5 or s[2] != ":":
+        raise ValueError("schedule.at must be HH:MM")
+    try:
+        hh = int(s[:2])
+        mm = int(s[3:])
+    except ValueError as e:
+        raise ValueError("schedule.at must be HH:MM") from e
+    if hh < 0 or hh > 23 or mm < 0 or mm > 59:
+        raise ValueError("schedule.at must be HH:MM")
+
+
+def _validate_schedule(schedule: dict[str, Any]) -> None:
+    freq = str(schedule.get("freq") or "daily").lower()
+    if freq == "daily":
+        _validate_hhmm(str(schedule.get("at") or "00:00"))
+        return
+    if freq == "weekly":
+        _validate_hhmm(str(schedule.get("at") or "00:00"))
+        day = str(schedule.get("day") or "mon").lower()
+        if day not in ("mon", "tue", "wed", "thu", "fri", "sat", "sun"):
+            raise ValueError("weekly schedule.day must be one of mon..sun")
+        return
+    if freq == "hourly":
+        interval = int(schedule.get("interval") or 1)
+        if interval < 1 or interval > 24:
+            raise ValueError("hourly schedule.interval must be between 1 and 24")
+        return
+    raise ValueError("schedule.freq must be one of: daily, weekly, hourly")
+
+
 def write_jobs(layout: Layout, doc: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(doc, dict):
         raise ValueError("jobs payload must be an object")
@@ -366,6 +466,8 @@ def write_jobs(layout: Layout, doc: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("each job must be an object")
         if not str(row.get("id") or "").strip():
             raise ValueError("each job requires id")
+        schedule = row.get("schedule") if isinstance(row.get("schedule"), dict) else {}
+        _validate_schedule(schedule)
         task = row.get("task") if isinstance(row.get("task"), dict) else {}
         if not str(task.get("type") or "").strip():
             raise ValueError(f"job {row.get('id')} requires task.type")

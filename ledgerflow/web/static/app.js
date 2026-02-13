@@ -293,6 +293,22 @@ function formatAiEvidenceSummary(evidenceRows) {
     .join("\n\n");
 }
 
+function formatAiSavings(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return "No savings opportunities detected.";
+  }
+  return rows
+    .map((row, i) => {
+      const cat = String((row && row.categoryId) || "uncategorized");
+      const current = String((row && row.currentSpend) || "0");
+      const target = String((row && row.targetSpend) || "0");
+      const savings = String((row && row.projectedSavings) || "0");
+      const ccy = String((row && row.currency) || "");
+      return `${i + 1}. ${cat}\nCurrent: ${current} ${ccy}\nTarget: ${target} ${ccy}\nProjected savings: ${savings} ${ccy}`;
+    })
+    .join("\n\n");
+}
+
 function renderAutomationTasks(items) {
   const tbody = document.querySelector("#automation-table tbody");
   if (!tbody) return;
@@ -631,6 +647,7 @@ async function refreshAiInsights() {
   const narrativeEl = document.getElementById("ai-narrative");
   const insightsEl = document.getElementById("ai-insights");
   const recommendationsEl = document.getElementById("ai-recommendations");
+  const savingsEl = document.getElementById("ai-savings");
   const evidenceEl = document.getElementById("ai-evidence");
 
   setButtonBusy("ai-run-btn", true);
@@ -648,6 +665,9 @@ async function refreshAiInsights() {
       insightsEl.value = insights.map((x, i) => `${i + 1}. ${x}`).join("\n");
       if (recommendationsEl instanceof HTMLTextAreaElement) {
         recommendationsEl.value = formatAiRecommendations(data.recommendations || []);
+      }
+      if (savingsEl instanceof HTMLTextAreaElement) {
+        savingsEl.value = formatAiSavings(data.savingsOpportunities || []);
       }
       if (evidenceEl instanceof HTMLTextAreaElement) {
         const evidenceRows = data.explainability && Array.isArray(data.explainability.evidence) ? data.explainability.evidence : [];
@@ -684,6 +704,7 @@ async function refreshAiInsights() {
       });
       setAiConfidence(null);
       if (recommendationsEl instanceof HTMLTextAreaElement) recommendationsEl.value = "";
+      if (savingsEl instanceof HTMLTextAreaElement) savingsEl.value = "";
       if (evidenceEl instanceof HTMLTextAreaElement) evidenceEl.value = "";
       out.textContent = `error: ${msg}`;
     } finally {
@@ -1037,6 +1058,36 @@ async function boot() {
       out.textContent = `error: ${String(e.message || e)}`;
     } finally {
       setButtonBusy("automation-run-next-btn", false);
+    }
+  });
+  document.getElementById("automation-dispatch-btn").addEventListener("click", async () => {
+    const out = document.getElementById("automation-result");
+    setButtonBusy("automation-dispatch-btn", true);
+    out.textContent = "dispatching due jobs + worker...";
+    try {
+      const data = await apiPostJson("/api/automation/dispatch", { runDue: true, maxTasks: 10 });
+      const due = data.due || {};
+      const worker = data.worker || {};
+      out.textContent = `dispatch: created=${due.created || 0} processed=${worker.processed || 0} failed=${worker.failed || 0}`;
+      await refreshAutomationTasks();
+    } catch (e) {
+      out.textContent = `error: ${String(e.message || e)}`;
+    } finally {
+      setButtonBusy("automation-dispatch-btn", false);
+    }
+  });
+  document.getElementById("automation-dead-btn").addEventListener("click", async () => {
+    const out = document.getElementById("automation-result");
+    setButtonBusy("automation-dead-btn", true);
+    out.textContent = "loading dead letters...";
+    try {
+      const data = await apiGet("/api/automation/dead-letters?limit=20");
+      const count = data.count || 0;
+      out.textContent = `dead letters=${count}`;
+    } catch (e) {
+      out.textContent = `error: ${String(e.message || e)}`;
+    } finally {
+      setButtonBusy("automation-dead-btn", false);
     }
   });
 

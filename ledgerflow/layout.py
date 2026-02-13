@@ -57,6 +57,10 @@ class Layout:
         return self.automation_dir / "queue.json"
 
     @property
+    def automation_dead_letters_path(self) -> Path:
+        return self.automation_dir / "dead_letters.jsonl"
+
+    @property
     def alerts_dir(self) -> Path:
         return self.data_dir / "alerts"
 

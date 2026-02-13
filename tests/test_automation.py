@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ledgerflow.automation import enqueue_due_jobs, enqueue_task, list_tasks, read_jobs, run_next_task, run_worker, write_jobs
+from ledgerflow.automation import dispatch_due_and_work, enqueue_due_jobs, enqueue_task, list_dead_letters, list_tasks, queue_stats, read_jobs, run_next_task, run_worker, write_jobs
 from ledgerflow.bootstrap import init_data_layout
 from ledgerflow.layout import layout_for
 
@@ -89,6 +89,64 @@ class TestAutomation(unittest.TestCase):
             out = run_worker(layout, worker_id="w1", max_tasks=5, poll_seconds=0)
             self.assertEqual(out["processed"], 2)
             self.assertEqual(out["done"], 2)
+
+    def test_dead_letter_and_stats(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            layout = layout_for(Path(td) / "data")
+            init_data_layout(layout, write_defaults=True)
+
+            enqueue_task(layout, task_type="unknown.task", payload={}, max_retries=0)
+            res = run_next_task(layout, worker_id="w2")
+            self.assertEqual(res["status"], "failed")
+
+            stats = queue_stats(layout)
+            self.assertGreaterEqual(stats.get("deadLetterCount") or 0, 1)
+            self.assertGreaterEqual((stats.get("counts") or {}).get("failed") or 0, 1)
+
+            dls = list_dead_letters(layout, limit=10)
+            self.assertGreaterEqual(len(dls), 1)
+            self.assertEqual(dls[0].get("taskType"), "unknown.task")
+
+    def test_dispatch_due_and_work(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            layout = layout_for(Path(td) / "data")
+            init_data_layout(layout, write_defaults=True)
+
+            jobs = {
+                "version": 1,
+                "jobs": [
+                    {
+                        "id": "daily_build",
+                        "enabled": True,
+                        "schedule": {"freq": "daily", "at": "10:00"},
+                        "task": {"type": "build", "payload": {}},
+                    }
+                ],
+            }
+            write_jobs(layout, jobs)
+
+            out = dispatch_due_and_work(layout, at="2026-02-10T10:05:00Z", worker_id="disp", max_tasks=5, poll_seconds=0)
+            self.assertEqual((out.get("due") or {}).get("created"), 1)
+            self.assertGreaterEqual(((out.get("worker") or {}).get("processed") or 0), 1)
+
+    def test_invalid_job_schedule_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            layout = layout_for(Path(td) / "data")
+            init_data_layout(layout, write_defaults=True)
+
+            bad = {
+                "version": 1,
+                "jobs": [
+                    {
+                        "id": "bad_weekly",
+                        "enabled": True,
+                        "schedule": {"freq": "weekly", "at": "09:00", "day": "monday"},
+                        "task": {"type": "build", "payload": {}},
+                    }
+                ],
+            }
+            with self.assertRaises(ValueError):
+                write_jobs(layout, bad)
 
 
 if __name__ == "__main__":

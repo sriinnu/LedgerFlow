@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -11,8 +12,8 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .ai_analysis import analyze_spending
 from .alerts import run_alerts
-from .auth import auth_mode_for_store, key_has_scope, load_api_key_store_from_env, scope_for_request
-from .automation import enqueue_due_jobs, enqueue_task, list_tasks, read_jobs, run_next_task, write_jobs
+from .auth import auth_mode_for_store, key_has_scope, load_api_key_store_from_env, scope_denial_reason, scope_for_request
+from .automation import dispatch_due_and_work, enqueue_due_jobs, enqueue_task, list_dead_letters, list_tasks, queue_stats, read_jobs, run_next_task, write_jobs
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
 from .charts import build_category_breakdown_month, build_series, build_merchant_top_month
@@ -86,6 +87,18 @@ def _is_local_client(request: Request) -> bool:
     if host.startswith("127."):
         return True
     return False
+
+
+def _parse_json_form_field(value: str | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    raw = json.loads(s)
+    if not isinstance(raw, dict):
+        raise ValueError("mapping must be a JSON object")
+    return {str(k): str(v) for k, v in raw.items() if v is not None}
 
 
 def _import_csv_from_path(
@@ -203,13 +216,23 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 denied = True
                 deny_reason = "missing_or_invalid_api_key"
                 response = JSONResponse(status_code=401, content={"detail": "API key required"})
-            elif not key_has_scope(key_meta, str(required_scope)):
-                denied = True
-                deny_reason = "insufficient_scope"
-                response = JSONResponse(status_code=403, content={"detail": f"Insufficient scope. Required: {required_scope}"})
             else:
-                auth_key_id = str(key_meta.get("id") or "")
-                response = await call_next(request)
+                deny_reason2 = scope_denial_reason(key_meta, str(required_scope))
+                if deny_reason2 == "api_key_disabled":
+                    denied = True
+                    deny_reason = deny_reason2
+                    response = JSONResponse(status_code=401, content={"detail": "API key is disabled"})
+                elif deny_reason2 == "api_key_expired":
+                    denied = True
+                    deny_reason = deny_reason2
+                    response = JSONResponse(status_code=401, content={"detail": "API key has expired"})
+                elif not key_has_scope(key_meta, str(required_scope)):
+                    denied = True
+                    deny_reason = "insufficient_scope"
+                    response = JSONResponse(status_code=403, content={"detail": f"Insufficient scope. Required: {required_scope}"})
+                else:
+                    auth_key_id = str(key_meta.get("id") or "")
+                    response = await call_next(request)
         elif is_api and (required_scope is not None) and not is_local:
             denied = True
             deny_reason = "non_local_client_without_api_key"
@@ -276,7 +299,29 @@ def create_app(data_dir: str | None = None) -> FastAPI:
             "authenticated": bool(meta),
             "keyId": str(meta.get("id")) if isinstance(meta, dict) and meta.get("id") else None,
             "scopes": list(meta.get("scopes") or []) if isinstance(meta, dict) else [],
+            "enabled": bool(meta.get("enabled", True)) if isinstance(meta, dict) else None,
+            "expiresAt": (str(meta.get("expiresAt")) if isinstance(meta, dict) and meta.get("expiresAt") else None),
         }
+
+    @app.get("/api/auth/keys")
+    def auth_keys(request: Request) -> dict[str, Any]:
+        store = getattr(request.app.state, "api_keys", {})
+        if not isinstance(store, dict):
+            store = {}
+        items: list[dict[str, Any]] = []
+        for _, meta in store.items():
+            if not isinstance(meta, dict):
+                continue
+            items.append(
+                {
+                    "id": str(meta.get("id") or ""),
+                    "kind": str(meta.get("kind") or ""),
+                    "scopes": list(meta.get("scopes") or []),
+                    "enabled": bool(meta.get("enabled", True)),
+                    "expiresAt": str(meta.get("expiresAt") or "") or None,
+                }
+            )
+        return {"items": items, "count": len(items)}
 
     @app.get("/api/ocr/capabilities")
     def api_ocr_capabilities() -> dict[str, Any]:
@@ -478,6 +523,17 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         items = list_tasks(layout, limit=limit, status=status)
         return {"items": items, "count": len(items)}
 
+    @app.get("/api/automation/stats")
+    def api_automation_stats(request: Request) -> dict[str, Any]:
+        layout = _get_layout(request)
+        return queue_stats(layout)
+
+    @app.get("/api/automation/dead-letters")
+    def api_automation_dead_letters(request: Request, limit: int = 50) -> dict[str, Any]:
+        layout = _get_layout(request)
+        items = list_dead_letters(layout, limit=limit)
+        return {"items": items, "count": len(items)}
+
     @app.post("/api/automation/tasks")
     def api_automation_enqueue(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         layout = _get_layout(request)
@@ -509,6 +565,18 @@ def create_app(data_dir: str | None = None) -> FastAPI:
     def api_automation_run_due(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
         layout = _get_layout(request)
         return enqueue_due_jobs(layout, at=(str(payload["at"]) if payload.get("at") else None))
+
+    @app.post("/api/automation/dispatch")
+    def api_automation_dispatch(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        layout = _get_layout(request)
+        return dispatch_due_and_work(
+            layout,
+            run_due=bool(payload.get("runDue") if "runDue" in payload else True),
+            at=(str(payload["at"]) if payload.get("at") else None),
+            worker_id=str(payload.get("workerId") or "api-dispatcher"),
+            max_tasks=int(payload.get("maxTasks") or 10),
+            poll_seconds=float(payload.get("pollSeconds") or 0.0),
+        )
 
     @app.get("/api/automation/jobs")
     def api_automation_jobs(request: Request) -> dict[str, Any]:
@@ -732,10 +800,12 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         currency: str = Form(default="USD"),
         sample: int = Form(default=5),
         max_rows: int | None = Form(default=None),
+        mapping_json: str | None = Form(default=None),
     ) -> JSONResponse:
         layout = _get_layout(request)
         saved = _save_upload_to_inbox(layout, file)
         try:
+            mapping = _parse_json_form_field(mapping_json)
             out = import_bank_json_path(
                 layout,
                 saved,
@@ -744,6 +814,7 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 default_currency=str(currency),
                 sample=int(sample),
                 max_rows=(int(max_rows) if max_rows is not None else None),
+                mapping=mapping,
             )
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
@@ -866,6 +937,9 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         if not path:
             raise HTTPException(status_code=400, detail="path is required")
         try:
+            mapping = payload.get("mapping")
+            if mapping is not None and not isinstance(mapping, dict):
+                raise ValueError("mapping must be an object")
             out = import_bank_json_path(
                 layout,
                 path,
@@ -874,6 +948,7 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 default_currency=str(payload.get("currency") or "USD"),
                 sample=int(payload.get("sample") or 5),
                 max_rows=(int(payload["maxRows"]) if payload.get("maxRows") is not None else None),
+                mapping=({str(k): str(v) for k, v in mapping.items() if v is not None} if isinstance(mapping, dict) else None),
             )
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e)) from e

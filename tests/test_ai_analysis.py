@@ -64,6 +64,9 @@ class TestAiAnalysis(unittest.TestCase):
             self.assertIn("projectedSpendLower", forecast[0])
             self.assertIn("projectedSpendUpper", forecast[0])
             self.assertIn("confidence", forecast[0])
+            self.assertGreaterEqual(len(out.get("savingsOpportunities") or []), 1)
+            first = (out.get("savingsOpportunities") or [])[0]
+            self.assertIn("projectedSavings", first)
 
     def test_invalid_month(self) -> None:
         with tempfile.TemporaryDirectory() as td:

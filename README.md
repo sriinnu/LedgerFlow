@@ -97,6 +97,11 @@ Notes:
 - Provider environment variables:
   - OpenAI: `OPENAI_API_KEY`
   - Ollama: `OLLAMA_URL` (default `http://127.0.0.1:11434/api/generate`) and optional `OLLAMA_MODEL`
+- Response now includes:
+  - `recommendations` (actionable next steps)
+  - `savingsOpportunities` (category-level 10% reduction targets)
+  - `confidence` (`level`, `score`, `reasons`)
+  - `explainability.evidence` (why each risk/recommendation was produced)
 
 ## Automation (Queue + Scheduler)
 
@@ -110,6 +115,38 @@ python3 -m ledgerflow automation run-next --worker-id cli-worker
 
 # Run worker loop
 python3 -m ledgerflow automation worker --worker-id cli-worker --max-tasks 20
+
+# Scheduler + worker dispatch in one step
+python3 -m ledgerflow automation dispatch --worker-id cli-dispatcher --max-tasks 20
+
+# Queue health and failures
+python3 -m ledgerflow automation stats
+python3 -m ledgerflow automation dead-letters --limit 20
+```
+
+Job schedule validation is enforced (`daily|weekly|hourly` only, with strict `HH:MM` for timed schedules).
+
+## Bank JSON Mapping
+
+For nested integration payloads, provide a mapping file:
+
+```bash
+python3 -m ledgerflow import bank-json data/inbox/bank/nested.json \
+  --mapping-file data/inbox/bank/mapping.json \
+  --commit
+```
+
+Example `mapping.json`:
+
+```json
+{
+  "date": "meta.date",
+  "amount": "money.value",
+  "currency": "money.currency",
+  "merchant": "meta.merchant.name",
+  "description": "notes.text",
+  "category": "labels.category"
+}
 ```
 
 ## OCR Through CLI
@@ -146,8 +183,9 @@ Scoped keys (preferred):
 
 ```bash
 LEDGERFLOW_API_KEYS='[
-  {"id":"reader","key":"reader-token","scopes":["read"]},
-  {"id":"writer","key":"writer-token","scopes":["write"]}
+  {"id":"reader","key":"reader-token","scopes":["read"],"enabled":true},
+  {"id":"writer","key":"writer-token","scopes":["write"],"enabled":true},
+  {"id":"ops","key":"ops-token","scopes":["admin"],"expiresAt":"2099-01-01T00:00:00Z"}
 ]' python3 -m ledgerflow serve --host 127.0.0.1 --port 8787
 ```
 
@@ -162,6 +200,8 @@ Key behavior:
 - `read` scope permits `GET`/`HEAD`
 - `write` scope permits mutating calls and also satisfies read access
 - `admin` scope includes `read` + `write`
+- keys with `"enabled": false` are rejected
+- keys with past `"expiresAt"` are rejected
 
 Auth headers:
 

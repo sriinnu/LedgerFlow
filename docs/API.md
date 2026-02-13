@@ -28,9 +28,9 @@ Auth behavior:
 
 ```json
 [
-  { "id": "reader", "key": "reader-token", "scopes": ["read"] },
-  { "id": "writer", "key": "writer-token", "scopes": ["write"] },
-  { "id": "ops", "key": "ops-token", "scopes": ["admin"] }
+  { "id": "reader", "key": "reader-token", "scopes": ["read"], "enabled": true },
+  { "id": "writer", "key": "writer-token", "scopes": ["write"], "enabled": true },
+  { "id": "ops", "key": "ops-token", "scopes": ["admin"], "expiresAt": "2099-01-01T00:00:00Z" }
 ]
 ```
 
@@ -50,6 +50,8 @@ Scope rules:
 - mutating methods (`POST`, etc.) require `write`.
 - `write` implicitly satisfies `read`.
 - `admin` satisfies both `read` and `write`.
+- keys with `"enabled": false` are rejected.
+- keys with past `"expiresAt"` are rejected.
 
 ## Health
 
@@ -66,6 +68,10 @@ Response:
 - `local_only_no_key`
 - `api_key` (legacy key)
 - `api_key_scoped` (any scoped key configured)
+
+`GET /api/auth/context` returns current key auth context for the presented key.
+
+`GET /api/auth/keys` lists configured key metadata (ids/scopes/status, no raw tokens).
 
 ## OCR
 
@@ -222,6 +228,7 @@ Fields (most are optional):
 - `day_first` (`true|false`, default `false`)
 - `sample` (default `5`)
 - `max_rows` (optional)
+- `mapping_json` (optional JSON object string for nested field mapping)
 
 Optional explicit mapping:
 
@@ -278,7 +285,15 @@ Body:
   "copyIntoSources": false,
   "currency": "USD",
   "sample": 5,
-  "maxRows": 200
+  "maxRows": 200,
+  "mapping": {
+    "date": "meta.date",
+    "amount": "money.value",
+    "currency": "money.currency",
+    "merchant": "meta.merchant.name",
+    "description": "notes.text",
+    "category": "labels.category"
+  }
 }
 ```
 
@@ -384,6 +399,7 @@ Response shape (`200`):
 - `quality` (`totalSpend`, `unclassifiedSpend`, `unclassifiedPct`, `manualSpend`, `manualPct`)
 - `topCategories`, `topMerchants`
 - `riskFlags`, `insights`, `recommendations`, `narrative`
+- `savingsOpportunities` (category-level reduction scenarios)
 - `confidence` (`level`, `score`, `reasons`)
 - `explainability.evidence` (rule-level evidence summary)
 - `datasets.monthlySpendTrend`, `datasets.categoryTrend`, `datasets.spendForecast`
@@ -394,6 +410,8 @@ Response shape (`200`):
 Queue listing:
 
 - `GET /api/automation/tasks?limit=100&status=queued,running`
+- `GET /api/automation/stats`
+- `GET /api/automation/dead-letters?limit=50`
 
 Enqueue task:
 
@@ -418,6 +436,21 @@ Enqueue scheduled jobs due now:
 
 - `POST /api/automation/run-due`
 - body (optional): `{ "at": "2026-02-13T09:00:00Z" }`
+
+Dispatch scheduler + worker in one call:
+
+- `POST /api/automation/dispatch`
+- body (all optional):
+
+```json
+{
+  "runDue": true,
+  "at": "2026-02-13T09:00:00Z",
+  "workerId": "api-dispatcher",
+  "maxTasks": 10,
+  "pollSeconds": 0.0
+}
+```
 
 Jobs config:
 

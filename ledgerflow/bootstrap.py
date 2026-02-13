@@ -108,3 +108,21 @@ def init_data_layout(layout: Layout, *, write_defaults: bool = True) -> None:
                 "jobs": [],
             },
         )
+
+    if not layout.automation_queue_path.exists():
+        write_json(
+            layout.automation_queue_path,
+            {
+                "version": 1,
+                "tasks": [],
+            },
+        )
+
+    if not layout.automation_state_path.exists():
+        write_json(
+            layout.automation_state_path,
+            {
+                "version": 1,
+                "lastSlots": {},
+            },
+        )

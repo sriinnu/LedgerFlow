@@ -336,6 +336,32 @@ def _recommendations(
     return recs
 
 
+def _savings_opportunities(
+    *,
+    top_categories: list[dict[str, Any]],
+    month: str,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in top_categories[:3]:
+        current = Decimal(str(row.get("value") or "0"))
+        if current <= 0:
+            continue
+        target = current * Decimal("0.90")
+        savings = current - target
+        out.append(
+            {
+                "categoryId": str(row.get("categoryId") or "uncategorized"),
+                "month": month,
+                "currentSpend": fmt_decimal(current),
+                "targetSpend": fmt_decimal(target),
+                "projectedSavings": fmt_decimal(savings),
+                "currency": str(row.get("currency") or "UNK"),
+                "assumption": "10_percent_reduction",
+            }
+        )
+    return out
+
+
 def _analysis_confidence(
     *,
     month_points: list[dict[str, Any]],
@@ -509,6 +535,7 @@ def analyze_spending(
 
     summary = next((p for p in month_points if p.get("month") == target), {})
     recommendations = _recommendations(risk_flags=risk_flags, top_categories=top_categories, quality=quality, month=target)
+    savings = _savings_opportunities(top_categories=top_categories, month=target)
 
     context = {
         "month": target,
@@ -520,6 +547,7 @@ def analyze_spending(
         "quality": quality,
         "insights": insights,
         "recommendations": recommendations[:3],
+        "savingsOpportunities": savings,
     }
     prompt = _prompt_from_context(context)
 
@@ -590,6 +618,7 @@ def analyze_spending(
         "riskFlags": risk_flags,
         "insights": insights,
         "recommendations": recommendations,
+        "savingsOpportunities": savings,
         "confidence": confidence,
         "explainability": explainability,
         "narrative": narrative,

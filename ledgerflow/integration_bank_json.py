@@ -14,6 +14,28 @@ from .storage import append_jsonl
 from .timeutil import parse_ymd, utc_now_iso
 
 
+def _path_get(obj: Any, path: str) -> Any:
+    cur = obj
+    for part in str(path or "").split("."):
+        key = part.strip()
+        if not key:
+            return None
+        if isinstance(cur, dict) and key in cur:
+            cur = cur.get(key)
+        else:
+            return None
+    return cur
+
+
+def _mapping_value(row: dict[str, Any], mapping: dict[str, str] | None, key: str) -> Any:
+    if not mapping:
+        return None
+    path = str(mapping.get(key) or "").strip()
+    if not path:
+        return None
+    return _path_get(row, path)
+
+
 def _pick_text(row: dict[str, Any], keys: list[str], default: str = "") -> str:
     for key in keys:
         if key in row and row.get(key) is not None:
@@ -47,23 +69,44 @@ def _parse_records(path: str | Path) -> list[dict[str, Any]]:
     return out
 
 
-def _row_to_tx(*, doc_id: str, row_index: int, row: dict[str, Any], default_currency: str) -> dict[str, Any]:
-    occurred_at = _pick_text(row, ["occurredAt", "postedAt", "date", "bookingDate", "valueDate"])
+def _row_to_tx(
+    *,
+    doc_id: str,
+    row_index: int,
+    row: dict[str, Any],
+    default_currency: str,
+    mapping: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    occurred_at = str(_mapping_value(row, mapping, "date") or "").strip()
+    if not occurred_at:
+        occurred_at = _pick_text(row, ["occurredAt", "postedAt", "date", "bookingDate", "valueDate"])
     if not occurred_at:
         raise ValueError("missing date field (occurredAt|postedAt|date|bookingDate|valueDate)")
     parse_ymd(occurred_at)
 
-    amount_obj = row.get("amount")
-    if isinstance(amount_obj, dict):
-        amount_value = _parse_amount_value(amount_obj.get("value"))
-        currency = str(amount_obj.get("currency") or default_currency)
+    mapped_amount = _mapping_value(row, mapping, "amount")
+    mapped_currency = _mapping_value(row, mapping, "currency")
+    if mapped_amount is not None:
+        amount_value = _parse_amount_value(mapped_amount)
+        currency = str(mapped_currency or default_currency)
     else:
-        amount_value = _parse_amount_value(row.get("amountValue", row.get("amount")))
-        currency = _pick_text(row, ["currency", "ccy"], default=default_currency)
+        amount_obj = row.get("amount")
+        if isinstance(amount_obj, dict):
+            amount_value = _parse_amount_value(amount_obj.get("value"))
+            currency = str(amount_obj.get("currency") or default_currency)
+        else:
+            amount_value = _parse_amount_value(row.get("amountValue", row.get("amount")))
+            currency = _pick_text(row, ["currency", "ccy"], default=default_currency)
 
-    merchant = _pick_text(row, ["merchant", "payee", "counterparty", "name"])
-    description = _pick_text(row, ["description", "memo", "details", "narration"]) or merchant
-    category_id = _pick_text(row, ["category", "categoryId"], default="uncategorized")
+    merchant = str(_mapping_value(row, mapping, "merchant") or "").strip()
+    if not merchant:
+        merchant = _pick_text(row, ["merchant", "payee", "counterparty", "name"])
+    description = str(_mapping_value(row, mapping, "description") or "").strip()
+    if not description:
+        description = _pick_text(row, ["description", "memo", "details", "narration"]) or merchant
+    category_id = str(_mapping_value(row, mapping, "category") or "").strip()
+    if not category_id:
+        category_id = _pick_text(row, ["category", "categoryId"], default="uncategorized")
     direction = "debit" if amount_value < 0 else "credit"
 
     row_hash_obj = {
@@ -108,6 +151,7 @@ def import_bank_json_path(
     default_currency: str,
     sample: int,
     max_rows: int | None,
+    mapping: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     doc = register_file(
         layout.sources_dir,
@@ -129,7 +173,7 @@ def import_bank_json_path(
 
     for i, row in enumerate(rows, start=1):
         try:
-            tx = _row_to_tx(doc_id=doc_id, row_index=i, row=row, default_currency=default_currency)
+            tx = _row_to_tx(doc_id=doc_id, row_index=i, row=row, default_currency=default_currency, mapping=mapping)
         except Exception:
             errors += 1
             continue

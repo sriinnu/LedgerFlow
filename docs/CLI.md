@@ -140,11 +140,25 @@ Useful flags:
 - `--currency USD` (default currency if rows omit it)
 - `--copy-into-sources` (store original file under `data/sources/<docId>/`)
 - `--max-rows <n>` (limit processed rows)
+- `--mapping-file <path>` (optional JSON field map for nested integration exports)
 
 Input shape:
 
 - JSON list of transaction objects, or
 - object containing `transactions: [...]`
+
+Example mapping file (`mapping.json`):
+
+```json
+{
+  "date": "meta.date",
+  "amount": "money.value",
+  "currency": "money.currency",
+  "merchant": "meta.merchant.name",
+  "description": "notes.text",
+  "category": "labels.category"
+}
+```
 
 ## Import Receipts / Bills
 
@@ -301,6 +315,12 @@ Provider environment variables:
 - OpenAI: `OPENAI_API_KEY`
 - Ollama: `OLLAMA_URL` (default `http://127.0.0.1:11434/api/generate`) and optional `OLLAMA_MODEL`
 
+Output highlights:
+
+- `recommendations` and `savingsOpportunities`
+- `confidence` with score/level/reasons
+- `explainability.evidence` for traceability
+
 ## Alerts
 
 Run alerts for a date (default: today). This reads `data/alerts/alert_rules.json` and writes:
@@ -384,6 +404,19 @@ python3 -m ledgerflow automation run-next --worker-id cli-worker
 python3 -m ledgerflow automation worker --worker-id cli-worker --max-tasks 20
 ```
 
+Dispatch scheduler + worker in one command:
+
+```bash
+python3 -m ledgerflow automation dispatch --worker-id cli-dispatcher --max-tasks 20
+```
+
+Queue health and failure inspection:
+
+```bash
+python3 -m ledgerflow automation stats
+python3 -m ledgerflow automation dead-letters --limit 20
+```
+
 Manage job definitions:
 
 ```bash
@@ -411,9 +444,9 @@ Auth environment variables:
 ```bash
 # list shape
 LEDGERFLOW_API_KEYS='[
-  {"id":"reader","key":"reader-token","scopes":["read"]},
-  {"id":"writer","key":"writer-token","scopes":["write"]},
-  {"id":"ops","key":"ops-token","scopes":["admin"]}
+  {"id":"reader","key":"reader-token","scopes":["read"],"enabled":true},
+  {"id":"writer","key":"writer-token","scopes":["write"],"enabled":true},
+  {"id":"ops","key":"ops-token","scopes":["admin"],"expiresAt":"2099-01-01T00:00:00Z"}
 ]'
 ```
 
@@ -431,3 +464,5 @@ Scope behavior:
 - `write`: allows mutating methods and implicitly covers `read`
 - `admin`: includes both `read` and `write`
 - `/api/health` is always unauthenticated
+- `"enabled": false` disables a key
+- past `"expiresAt"` timestamps invalidate a key

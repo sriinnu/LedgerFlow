@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -59,10 +60,14 @@ def load_api_key_store_from_env() -> dict[str, dict[str, Any]]:
             scopes = _parse_scopes(item.get("scopes") or ["read", "write"])
             if not scopes:
                 scopes = set(_DEFAULT_RW_SCOPES)
+            enabled = bool(item.get("enabled") if "enabled" in item else True)
+            expires_at = str(item.get("expiresAt") or "").strip() or None
             out[token] = {
                 "id": key_id,
                 "scopes": sorted(scopes),
                 "kind": "scoped",
+                "enabled": enabled,
+                "expiresAt": expires_at,
             }
 
     legacy = str(os.environ.get("LEDGERFLOW_API_KEY") or "").strip()
@@ -71,6 +76,8 @@ def load_api_key_store_from_env() -> dict[str, dict[str, Any]]:
             "id": "legacy",
             "scopes": sorted({"admin", *list(_DEFAULT_RW_SCOPES)}),
             "kind": "legacy",
+            "enabled": True,
+            "expiresAt": None,
         }
 
     return out
@@ -97,9 +104,43 @@ def scope_for_request(method: str, path: str) -> str | None:
 
 
 def key_has_scope(meta: dict[str, Any], required: str) -> bool:
+    if not bool(meta.get("enabled", True)):
+        return False
+    exp = _parse_expiry(meta.get("expiresAt"))
+    if exp is not None and datetime.now(UTC) >= exp:
+        return False
+
     scopes = {str(x) for x in (meta.get("scopes") or [])}
     if "admin" in scopes:
         return True
     if required == "read" and "write" in scopes:
         return True
     return required in scopes
+
+
+def _parse_expiry(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def scope_denial_reason(meta: dict[str, Any], required: str) -> str | None:
+    if not bool(meta.get("enabled", True)):
+        return "api_key_disabled"
+    exp = _parse_expiry(meta.get("expiresAt"))
+    if exp is not None and datetime.now(UTC) >= exp:
+        return "api_key_expired"
+    if key_has_scope(meta, required):
+        return None
+    return "insufficient_scope"

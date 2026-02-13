@@ -77,6 +77,46 @@ class TestIntegrationBankJson(unittest.TestCase):
             self.assertEqual(len(view.transactions), 2)
             self.assertTrue(all(((t.get("source") or {}).get("sourceType") == "bank_json") for t in view.transactions))
 
+    def test_bank_json_nested_mapping(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            layout = layout_for(Path(td) / "data")
+            init_data_layout(layout, write_defaults=False)
+
+            path = Path(td) / "nested_bank.json"
+            payload = {
+                "transactions": [
+                    {
+                        "meta": {"date": "2026-02-12", "merchant": {"name": "Metro"}},
+                        "money": {"value": "-7.25", "currency": "USD"},
+                        "notes": {"text": "subway ride"},
+                    }
+                ]
+            }
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            out = import_bank_json_path(
+                layout,
+                path,
+                commit=True,
+                copy_into_sources=False,
+                default_currency="USD",
+                sample=5,
+                max_rows=None,
+                mapping={
+                    "date": "meta.date",
+                    "merchant": "meta.merchant.name",
+                    "amount": "money.value",
+                    "currency": "money.currency",
+                    "description": "notes.text",
+                },
+            )
+            self.assertEqual(out["imported"], 1)
+
+            tx = load_ledger(layout).transactions[0]
+            self.assertEqual(tx["occurredAt"], "2026-02-12")
+            self.assertEqual(tx["merchant"], "Metro")
+            self.assertEqual(tx["amount"]["value"], "-7.25")
+
 
 if __name__ == "__main__":
     unittest.main()
