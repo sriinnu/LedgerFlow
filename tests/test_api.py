@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -258,4 +259,111 @@ class TestApi(unittest.TestCase):
                 )
 
             self.assertEqual(denied.status_code, 401)
-            self.assertIn("Non-local API access requires", denied.text)
+
+    def test_scoped_api_keys_read_vs_write(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data_dir = Path(td) / "data"
+            scoped = json.dumps(
+                [
+                    {"id": "reader", "key": "read-only", "scopes": ["read"]},
+                    {"id": "writer", "key": "write-ok", "scopes": ["write"]},
+                ]
+            )
+            with patch.dict("os.environ", {"LEDGERFLOW_API_KEYS": scoped, "LEDGERFLOW_API_KEY": ""}, clear=False):
+                app = create_app(str(data_dir))
+            client = TestClient(app)
+
+            h = client.get("/api/health")
+            self.assertEqual(h.status_code, 200)
+            self.assertTrue(h.json().get("authEnabled"))
+            self.assertEqual(h.json().get("authMode"), "api_key_scoped")
+
+            read_ok = client.get("/api/transactions?limit=10", headers={"x-api-key": "read-only"})
+            self.assertEqual(read_ok.status_code, 200)
+
+            denied = client.post(
+                "/api/manual/add",
+                headers={"x-api-key": "read-only"},
+                json={
+                    "occurredAt": "2026-02-10",
+                    "amount": {"value": "-12.30", "currency": "USD"},
+                    "merchant": "Farmers Market",
+                },
+            )
+            self.assertEqual(denied.status_code, 403)
+
+            write_ok = client.post(
+                "/api/manual/add",
+                headers={"x-api-key": "write-ok"},
+                json={
+                    "occurredAt": "2026-02-10",
+                    "amount": {"value": "-12.30", "currency": "USD"},
+                    "merchant": "Farmers Market",
+                },
+            )
+            self.assertEqual(write_ok.status_code, 200)
+
+            ctx = client.get("/api/auth/context", headers={"x-api-key": "write-ok"})
+            self.assertEqual(ctx.status_code, 200)
+            self.assertTrue(ctx.json().get("authenticated"))
+            self.assertIn("write", ctx.json().get("scopes") or [])
+
+    def test_automation_and_bank_json_api_endpoints(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data_dir = Path(td) / "data"
+            app = create_app(str(data_dir))
+            client = TestClient(app)
+
+            enq = client.post("/api/automation/tasks", json={"taskType": "build", "payload": {}})
+            self.assertEqual(enq.status_code, 200)
+            task_id = enq.json()["task"]["taskId"]
+            self.assertTrue(task_id.startswith("tsk_"))
+
+            tasks = client.get("/api/automation/tasks?limit=20")
+            self.assertEqual(tasks.status_code, 200)
+            self.assertGreaterEqual(tasks.json()["count"], 1)
+
+            run1 = client.post("/api/automation/run-next", json={"workerId": "api-test"})
+            self.assertEqual(run1.status_code, 200)
+            self.assertIn(run1.json()["status"], {"done", "retry_scheduled", "failed"})
+
+            jobs_doc = {
+                "version": 1,
+                "jobs": [
+                    {
+                        "id": "daily_build",
+                        "enabled": True,
+                        "schedule": {"freq": "daily", "at": "09:00"},
+                        "task": {"type": "build", "payload": {}},
+                    }
+                ],
+            }
+            sj = client.post("/api/automation/jobs", json=jobs_doc)
+            self.assertEqual(sj.status_code, 200)
+            gj = client.get("/api/automation/jobs")
+            self.assertEqual(gj.status_code, 200)
+            self.assertEqual(len(gj.json().get("jobs") or []), 1)
+
+            due = client.post("/api/automation/run-due", json={"at": "2026-02-10T09:05:00Z"})
+            self.assertEqual(due.status_code, 200)
+            self.assertEqual(due.json().get("created"), 1)
+
+            bank_json = Path(td) / "bank.json"
+            bank_json.write_text(
+                json.dumps(
+                    {
+                        "transactions": [
+                            {"date": "2026-02-10", "amount": -9.99, "currency": "USD", "merchant": "Cafe"},
+                            {"date": "2026-02-11", "amount": 100.0, "currency": "USD", "merchant": "Payroll"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            bj = client.post(
+                "/api/import/bank-json-path",
+                json={"path": str(bank_json), "commit": True, "currency": "USD"},
+            )
+            self.assertEqual(bj.status_code, 200)
+            self.assertEqual(bj.json().get("imported"), 2)

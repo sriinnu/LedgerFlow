@@ -17,6 +17,7 @@ class TestCliSurface(unittest.TestCase):
         self.assertIn("report", choices)
         self.assertIn("review", choices)
         self.assertIn("ai", choices)
+        self.assertIn("automation", choices)
 
     def test_ocr_extract_flags(self) -> None:
         parser = build_parser()
@@ -72,3 +73,40 @@ class TestCliSurface(unittest.TestCase):
         self.assertEqual(ns.model, "llama3.1:8b")
         self.assertEqual(ns.lookback_months, 9)
         self.assertTrue(ns.json)
+
+    def test_import_bank_json_flags(self) -> None:
+        parser = build_parser()
+        ns = parser.parse_args(
+            [
+                "import",
+                "bank-json",
+                "statement.json",
+                "--currency",
+                "EUR",
+                "--commit",
+                "--sample",
+                "3",
+            ]
+        )
+        self.assertEqual(ns.path, "statement.json")
+        self.assertEqual(ns.currency, "EUR")
+        self.assertTrue(ns.commit)
+        self.assertEqual(ns.sample, 3)
+
+    def test_automation_enqueue_flags(self) -> None:
+        parser = build_parser()
+        ns = parser.parse_args(
+            [
+                "automation",
+                "enqueue",
+                "--task-type",
+                "ai.analyze",
+                "--payload-json",
+                '{"month":"2026-02"}',
+                "--max-retries",
+                "4",
+            ]
+        )
+        self.assertEqual(ns.task_type, "ai.analyze")
+        self.assertEqual(ns.payload_json, '{"month":"2026-02"}')
+        self.assertEqual(ns.max_retries, 4)

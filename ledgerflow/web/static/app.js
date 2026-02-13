@@ -161,6 +161,7 @@ function clearCanvas(canvas) {
 
 let chartsRefreshPromise = null;
 let aiRefreshPromise = null;
+let automationRefreshPromise = null;
 
 function setButtonBusy(buttonId, busy) {
   const btn = document.getElementById(buttonId);
@@ -214,6 +215,145 @@ function setAiSummary({ providerUsed, riskCount, lookbackMonths, fallbackNote })
   if (risksEl) risksEl.textContent = riskCount == null ? "-" : String(riskCount);
   if (lookbackEl) lookbackEl.textContent = lookbackMonths == null ? "-" : String(lookbackMonths);
   if (fallbackEl) fallbackEl.textContent = fallbackNote == null ? "-" : String(fallbackNote);
+}
+
+function setAiConfidence(confidence) {
+  const levelEl = document.getElementById("ai-confidence-level");
+  const scoreEl = document.getElementById("ai-confidence-score");
+  const reasonsEl = document.getElementById("ai-confidence-reasons");
+
+  const level = confidence && confidence.level != null ? String(confidence.level) : "-";
+  const scoreNum = confidence && confidence.score != null ? Number(confidence.score) : null;
+  const scoreText = Number.isFinite(scoreNum)
+    ? scoreNum.toFixed(2)
+    : confidence && confidence.score != null
+      ? String(confidence.score)
+      : "-";
+  const reasons = confidence && Array.isArray(confidence.reasons) ? confidence.reasons.map((x) => String(x)).join(", ") : "-";
+
+  if (levelEl) levelEl.textContent = level;
+  if (scoreEl) scoreEl.textContent = scoreText;
+  if (reasonsEl) reasonsEl.textContent = reasons || "-";
+}
+
+function compactJson(value, maxLen = 220) {
+  if (value == null) return "";
+  let raw = "";
+  if (typeof value === "string") {
+    raw = value;
+  } else {
+    try {
+      raw = JSON.stringify(value);
+    } catch {
+      raw = String(value);
+    }
+  }
+  if (raw.length <= maxLen) return raw;
+  return `${raw.slice(0, Math.max(0, maxLen - 1))}…`;
+}
+
+function formatAiRecommendations(recommendations) {
+  if (!Array.isArray(recommendations) || recommendations.length === 0) {
+    return "No recommendations available.";
+  }
+  return recommendations
+    .map((row, i) => {
+      const priority = String(row && row.priority ? row.priority : "n/a").toUpperCase();
+      const title = String((row && (row.title || row.id)) || "Recommendation");
+      const action = String((row && row.action) || "");
+      const impact = String((row && row.impact) || "");
+      const lines = [`${i + 1}. [${priority}] ${title}`];
+      if (action) lines.push(`Action: ${action}`);
+      if (impact) lines.push(`Impact: ${impact}`);
+      return lines.join("\n");
+    })
+    .join("\n\n");
+}
+
+function formatAiEvidenceSummary(evidenceRows) {
+  if (!Array.isArray(evidenceRows) || evidenceRows.length === 0) {
+    return "No explainability evidence available.";
+  }
+  return evidenceRows
+    .map((row, i) => {
+      const rule = String((row && row.rule) || `evidence_${i + 1}`);
+      const source = String((row && row.source) || "unknown");
+      const explanation = String((row && row.explanation) || "");
+      const metrics =
+        row && row.metrics && typeof row.metrics === "object"
+          ? Object.entries(row.metrics)
+              .map(([k, v]) => `${k}=${v}`)
+              .join(", ")
+          : "";
+      const lines = [`${i + 1}. ${rule} (${source})`];
+      if (explanation) lines.push(explanation);
+      if (metrics) lines.push(`metrics: ${metrics}`);
+      return lines.join("\n");
+    })
+    .join("\n\n");
+}
+
+function renderAutomationTasks(items) {
+  const tbody = document.querySelector("#automation-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  for (const task of (items || []).slice().reverse()) {
+    const taskId = task && task.taskId ? String(task.taskId) : "";
+    const taskType = task && task.taskType ? String(task.taskType) : "";
+    const status = task && task.status ? String(task.status) : "";
+    const attempts = task && task.attempts != null ? Number(task.attempts) : 0;
+    const maxRetries = task && task.maxRetries != null ? Number(task.maxRetries) : 0;
+    const availableAt = task && task.availableAt ? String(task.availableAt) : "";
+    const updatedAt = task && task.updatedAt ? String(task.updatedAt) : "";
+    const source = task && task.source ? String(task.source) : "";
+    const details = task && task.error ? `error: ${String(task.error)}` : compactJson(task && task.result ? task.result : "-", 180);
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(taskId)}</td>
+      <td>${escapeHtml(taskType)}</td>
+      <td>${escapeHtml(status)}</td>
+      <td>${escapeHtml(`${attempts}/${maxRetries}`)}</td>
+      <td>${escapeHtml(availableAt)}</td>
+      <td>${escapeHtml(updatedAt)}</td>
+      <td>${escapeHtml(source)}</td>
+      <td class="wrap">${escapeHtml(details)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+async function refreshAutomationTasks() {
+  if (automationRefreshPromise) return automationRefreshPromise;
+  const out = document.getElementById("automation-result");
+  const limitEl = document.getElementById("automation-limit");
+  const statusEl = document.getElementById("automation-status");
+  const limitRaw = parseInt(limitEl instanceof HTMLInputElement ? limitEl.value || "12" : "12", 10);
+  const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, limitRaw)) : 12;
+  if (limitEl instanceof HTMLInputElement) limitEl.value = String(limit);
+  const status = statusEl instanceof HTMLInputElement ? statusEl.value.trim() : "";
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  if (status) params.set("status", status);
+
+  setButtonBusy("automation-refresh-btn", true);
+  out.textContent = "loading queue...";
+  automationRefreshPromise = (async () => {
+    try {
+      const data = await apiGet(`/api/automation/tasks?${params.toString()}`);
+      const items = data.items || [];
+      renderAutomationTasks(items);
+      out.textContent = `queue=${items.length}`;
+    } catch (e) {
+      renderAutomationTasks([]);
+      out.textContent = `error: ${String(e.message || e)}`;
+    } finally {
+      automationRefreshPromise = null;
+      setButtonBusy("automation-refresh-btn", false);
+    }
+  })();
+  return automationRefreshPromise;
 }
 
 function drawSeriesChart(points) {
@@ -490,6 +630,8 @@ async function refreshAiInsights() {
   if (lookbackInput instanceof HTMLInputElement) lookbackInput.value = String(lookback);
   const narrativeEl = document.getElementById("ai-narrative");
   const insightsEl = document.getElementById("ai-insights");
+  const recommendationsEl = document.getElementById("ai-recommendations");
+  const evidenceEl = document.getElementById("ai-evidence");
 
   setButtonBusy("ai-run-btn", true);
   out.textContent = "working...";
@@ -504,6 +646,13 @@ async function refreshAiInsights() {
       const insights = data.insights || [];
       narrativeEl.value = data.narrative || "";
       insightsEl.value = insights.map((x, i) => `${i + 1}. ${x}`).join("\n");
+      if (recommendationsEl instanceof HTMLTextAreaElement) {
+        recommendationsEl.value = formatAiRecommendations(data.recommendations || []);
+      }
+      if (evidenceEl instanceof HTMLTextAreaElement) {
+        const evidenceRows = data.explainability && Array.isArray(data.explainability.evidence) ? data.explainability.evidence : [];
+        evidenceEl.value = formatAiEvidenceSummary(evidenceRows);
+      }
       const ds = data.datasets || {};
       drawAiForecast(ds.monthlySpendTrend || [], ds.spendForecast || []);
       const providerUsed = data.providerUsed || "heuristic";
@@ -523,6 +672,7 @@ async function refreshAiInsights() {
         lookbackMonths: lookbackUsed,
         fallbackNote,
       });
+      setAiConfidence(data.confidence || null);
       out.textContent = `provider=${providerUsed} risks=${riskCount} lookback=${lookbackUsed}`;
     } catch (e) {
       const msg = String(e.message || e);
@@ -532,6 +682,9 @@ async function refreshAiInsights() {
         lookbackMonths: lookback,
         fallbackNote: `Request failed: ${msg}`,
       });
+      setAiConfidence(null);
+      if (recommendationsEl instanceof HTMLTextAreaElement) recommendationsEl.value = "";
+      if (evidenceEl instanceof HTMLTextAreaElement) evidenceEl.value = "";
       out.textContent = `error: ${msg}`;
     } finally {
       aiRefreshPromise = null;
@@ -829,6 +982,63 @@ async function boot() {
   document.getElementById("ai-run-btn").addEventListener("click", async () => {
     await refreshAiInsights();
   });
+  document.getElementById("automation-refresh-btn").addEventListener("click", async () => {
+    await refreshAutomationTasks();
+  });
+  document.getElementById("automation-enqueue-build-btn").addEventListener("click", async () => {
+    const out = document.getElementById("automation-result");
+    setButtonBusy("automation-enqueue-build-btn", true);
+    out.textContent = "enqueuing build...";
+    try {
+      const data = await apiPostJson("/api/automation/tasks", {
+        taskType: "build",
+        payload: {},
+        maxRetries: 2,
+      });
+      const task = data.task || {};
+      out.textContent = `queued task=${task.taskId || "-"} type=${task.taskType || "build"}`;
+      await refreshAutomationTasks();
+    } catch (e) {
+      out.textContent = `error: ${String(e.message || e)}`;
+    } finally {
+      setButtonBusy("automation-enqueue-build-btn", false);
+    }
+  });
+  document.getElementById("automation-run-due-btn").addEventListener("click", async () => {
+    const out = document.getElementById("automation-result");
+    setButtonBusy("automation-run-due-btn", true);
+    out.textContent = "running due jobs...";
+    try {
+      const data = await apiPostJson("/api/automation/run-due", {});
+      const created = data.created || 0;
+      const skipped = Array.isArray(data.skippedJobIds) ? data.skippedJobIds.length : 0;
+      out.textContent = `due jobs: created=${created} skipped=${skipped}`;
+      await refreshAutomationTasks();
+    } catch (e) {
+      out.textContent = `error: ${String(e.message || e)}`;
+    } finally {
+      setButtonBusy("automation-run-due-btn", false);
+    }
+  });
+  document.getElementById("automation-run-next-btn").addEventListener("click", async () => {
+    const out = document.getElementById("automation-result");
+    setButtonBusy("automation-run-next-btn", true);
+    out.textContent = "running next task...";
+    try {
+      const data = await apiPostJson("/api/automation/run-next", {});
+      if (String(data.status || "") === "idle") {
+        out.textContent = "worker idle: no available tasks";
+      } else {
+        const task = data.task || {};
+        out.textContent = `worker status=${data.status || "-"} task=${task.taskId || "-"}`;
+      }
+      await refreshAutomationTasks();
+    } catch (e) {
+      out.textContent = `error: ${String(e.message || e)}`;
+    } finally {
+      setButtonBusy("automation-run-next-btn", false);
+    }
+  });
 
   document.querySelector("#review-table tbody").addEventListener("click", async (ev) => {
     const target = ev.target;
@@ -860,6 +1070,7 @@ async function boot() {
   await refreshReviewQueue();
   await refreshCharts();
   await refreshAiInsights();
+  await refreshAutomationTasks();
   await refresh();
 }
 

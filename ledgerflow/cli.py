@@ -6,11 +6,13 @@ import sys
 from pathlib import Path
 
 from .ai_analysis import analyze_spending
+from .automation import enqueue_due_jobs, enqueue_task, list_tasks, read_jobs, run_next_task, run_worker, write_jobs
 from .extraction import extract_text, ocr_capabilities
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
 from .csv_import import CsvMapping, csv_row_to_tx, infer_mapping, read_csv_rows
 from .exporting import export_transactions_csv
+from .integration_bank_json import import_bank_json_path
 from .index_db import has_source_hash, index_stats, rebuild_index
 from .layout import layout_for
 from .manual import ManualEntry, correction_event, manual_entry_to_tx, parse_amount, tombstone_event
@@ -393,6 +395,22 @@ def _cmd_import_csv(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_import_bank_json(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    out = import_bank_json_path(
+        layout,
+        args.path,
+        commit=args.commit,
+        copy_into_sources=args.copy_into_sources,
+        default_currency=args.currency,
+        sample=args.sample,
+        max_rows=args.max_rows,
+    )
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
 def _cmd_import_receipt(args: argparse.Namespace) -> int:
     layout = layout_for(args.data_dir)
     init_data_layout(layout, write_defaults=False)
@@ -476,6 +494,87 @@ def _cmd_ocr_extract(args: argparse.Namespace) -> int:
         print(json.dumps({"path": args.path, "meta": meta, "text": text}, ensure_ascii=False))
     else:
         print(text)
+    return 0
+
+
+def _parse_payload_json(raw: str | None) -> dict[str, object]:
+    if not raw:
+        return {}
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise SystemExit("payload json must be an object")
+    return data
+
+
+def _cmd_automation_tasks(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    items = list_tasks(layout, limit=args.limit, status=args.status)
+    print(json.dumps({"items": items, "count": len(items)}, ensure_ascii=False))
+    return 0
+
+
+def _cmd_automation_enqueue(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    payload = _parse_payload_json(args.payload_json)
+    task = enqueue_task(
+        layout,
+        task_type=args.task_type,
+        payload=payload,
+        run_at=args.run_at,
+        max_retries=args.max_retries,
+        source="cli",
+    )
+    print(json.dumps({"task": task}, ensure_ascii=False))
+    return 0
+
+
+def _cmd_automation_run_next(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    out = run_next_task(layout, worker_id=args.worker_id)
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
+def _cmd_automation_run_due(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    out = enqueue_due_jobs(layout, at=args.at)
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
+def _cmd_automation_jobs_list(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    out = read_jobs(layout)
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
+def _cmd_automation_jobs_set(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise SystemExit("jobs file must contain a JSON object")
+    out = write_jobs(layout, payload)
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
+def _cmd_automation_worker(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    out = run_worker(
+        layout,
+        worker_id=args.worker_id,
+        max_tasks=args.max_tasks,
+        poll_seconds=args.poll_seconds,
+    )
+    print(json.dumps(out, ensure_ascii=False))
     return 0
 
 
@@ -709,6 +808,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_icsv.add_argument("--currency-col", help="CSV column name for currency.")
     p_icsv.set_defaults(func=_cmd_import_csv)
 
+    p_ibjson = sub_import.add_parser("bank-json", help="Import transactions from a bank/integration JSON export.")
+    p_ibjson.add_argument("path")
+    p_ibjson.add_argument("--currency", default="USD", help="Default currency when omitted in rows.")
+    p_ibjson.add_argument("--copy-into-sources", action="store_true", help="Copy file into data/sources/<docId>/")
+    p_ibjson.add_argument(
+        "--commit",
+        action="store_true",
+        help="Write imported transactions to the ledger (default is dry-run).",
+    )
+    p_ibjson.add_argument("--sample", type=int, default=5, help="How many txs to print in dry-run mode.")
+    p_ibjson.add_argument("--max-rows", type=int, help="Limit number of JSON rows processed.")
+    p_ibjson.set_defaults(func=_cmd_import_bank_json)
+
     p_irec = sub_import.add_parser("receipt", help="Import + parse a receipt (PDF/image/text).")
     p_irec.add_argument("path")
     p_irec.add_argument("--currency", default="USD", help="Default currency when not detected.")
@@ -748,6 +860,42 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--port", type=int, default=8787)
     p_serve.add_argument("--reload", action="store_true", help="Enable auto-reload (dev only).")
     p_serve.set_defaults(func=_cmd_serve)
+
+    p_auto = sub.add_parser("automation", help="Automation scheduler + queue operations.")
+    sub_auto = p_auto.add_subparsers(dest="automation_cmd", required=True)
+
+    p_atasks = sub_auto.add_parser("tasks", help="List queued/running/completed tasks.")
+    p_atasks.add_argument("--limit", type=int, default=100)
+    p_atasks.add_argument("--status", help="Comma-separated status filter (queued,running,done,failed).")
+    p_atasks.set_defaults(func=_cmd_automation_tasks)
+
+    p_aenq = sub_auto.add_parser("enqueue", help="Enqueue a task into the automation queue.")
+    p_aenq.add_argument("--task-type", required=True, help="Task type (build, alerts.run, ai.analyze, report.daily, report.monthly).")
+    p_aenq.add_argument("--payload-json", help="JSON object payload.")
+    p_aenq.add_argument("--run-at", help="ISO timestamp for earliest run time (UTC recommended).")
+    p_aenq.add_argument("--max-retries", type=int, default=2)
+    p_aenq.set_defaults(func=_cmd_automation_enqueue)
+
+    p_anext = sub_auto.add_parser("run-next", help="Claim and run one queued task.")
+    p_anext.add_argument("--worker-id", default="cli-worker")
+    p_anext.set_defaults(func=_cmd_automation_run_next)
+
+    p_adue = sub_auto.add_parser("run-due", help="Enqueue due jobs from automation/jobs.json.")
+    p_adue.add_argument("--at", help="ISO timestamp override (default: now)")
+    p_adue.set_defaults(func=_cmd_automation_run_due)
+
+    p_ajlist = sub_auto.add_parser("jobs-list", help="Print current automation job configuration.")
+    p_ajlist.set_defaults(func=_cmd_automation_jobs_list)
+
+    p_ajset = sub_auto.add_parser("jobs-set", help="Replace automation jobs config from JSON file.")
+    p_ajset.add_argument("--file", required=True, help="Path to jobs.json payload.")
+    p_ajset.set_defaults(func=_cmd_automation_jobs_set)
+
+    p_awrk = sub_auto.add_parser("worker", help="Run worker loop for queued tasks.")
+    p_awrk.add_argument("--worker-id", default="cli-worker")
+    p_awrk.add_argument("--max-tasks", type=int, default=10)
+    p_awrk.add_argument("--poll-seconds", type=float, default=0.2)
+    p_awrk.set_defaults(func=_cmd_automation_worker)
 
     return p
 

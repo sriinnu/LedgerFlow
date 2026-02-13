@@ -14,6 +14,7 @@ def init_data_layout(layout: Layout, *, write_defaults: bool = True) -> None:
     ensure_dir(layout.data_dir / "reports" / "daily")
     ensure_dir(layout.data_dir / "reports" / "monthly")
     ensure_dir(layout.data_dir / "charts")
+    ensure_dir(layout.automation_dir)
     ensure_dir(layout.data_dir / "alerts")
     ensure_dir(layout.data_dir / "rules")
     ensure_dir(layout.index_dir)
@@ -96,5 +97,14 @@ def init_data_layout(layout: Layout, *, write_defaults: bool = True) -> None:
                         "limit": 50,
                     },
                 ],
+            },
+        )
+
+    if not layout.automation_jobs_path.exists():
+        write_json(
+            layout.automation_jobs_path,
+            {
+                "version": 1,
+                "jobs": [],
             },
         )

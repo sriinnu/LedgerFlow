@@ -16,6 +16,7 @@ LedgerFlow is a local-first bills and receipts money tracker with:
 
 - Inputs:
   - bank CSV exports
+  - bank/integration JSON exports
   - receipt/bill files (`txt`, `pdf`, image formats)
   - manual entries
 - Outputs:
@@ -24,10 +25,11 @@ LedgerFlow is a local-first bills and receipts money tracker with:
   - chart-ready JSON datasets
   - alert events + persistent alert state
 - Operations:
-  - idempotent source registration and CSV import
+  - idempotent source registration and bank import (CSV/JSON)
   - receipt/bill parsing + source artifacts
   - transaction linking (`receipt`/`bill` to `bank_csv`)
   - manual-vs-bank duplicate marking
+  - automation queue + scheduler jobs
   - review queue + resolution
 - Runtime surfaces:
   - CLI: `python3 -m ledgerflow ...`
@@ -47,6 +49,10 @@ python3 -m ledgerflow init
 python3 -m ledgerflow import csv data/inbox/bank/statement.csv --sample 5
 python3 -m ledgerflow import csv data/inbox/bank/statement.csv --commit
 
+# Import bank/integration JSON (dry-run, then commit)
+python3 -m ledgerflow import bank-json data/inbox/bank/export.json --sample 5
+python3 -m ledgerflow import bank-json data/inbox/bank/export.json --commit
+
 # Add a manual transaction
 python3 -m ledgerflow manual add \
   --occurred-at 2026-02-10 \
@@ -63,6 +69,10 @@ python3 -m ledgerflow report monthly --month 2026-02
 python3 -m ledgerflow charts series --from-date 2026-02-01 --to-date 2026-02-29
 python3 -m ledgerflow alerts run --at 2026-02-10
 python3 -m ledgerflow ai analyze --month 2026-02 --provider heuristic
+
+# Automation queue examples
+python3 -m ledgerflow automation enqueue --task-type build
+python3 -m ledgerflow automation run-next --worker-id cli-worker
 ```
 
 ## AI Analysis (Local Models + LLMs)
@@ -87,6 +97,20 @@ Notes:
 - Provider environment variables:
   - OpenAI: `OPENAI_API_KEY`
   - Ollama: `OLLAMA_URL` (default `http://127.0.0.1:11434/api/generate`) and optional `OLLAMA_MODEL`
+
+## Automation (Queue + Scheduler)
+
+```bash
+# List queue tasks
+python3 -m ledgerflow automation tasks --limit 25
+
+# Enqueue due scheduler jobs, then run one task
+python3 -m ledgerflow automation run-due
+python3 -m ledgerflow automation run-next --worker-id cli-worker
+
+# Run worker loop
+python3 -m ledgerflow automation worker --worker-id cli-worker --max-tasks 20
+```
 
 ## OCR Through CLI
 
@@ -118,12 +142,28 @@ Optional API protection:
 LEDGERFLOW_API_KEY=change-me python3 -m ledgerflow serve --host 127.0.0.1 --port 8787
 ```
 
+Scoped keys (preferred):
+
+```bash
+LEDGERFLOW_API_KEYS='[
+  {"id":"reader","key":"reader-token","scopes":["read"]},
+  {"id":"writer","key":"writer-token","scopes":["write"]}
+]' python3 -m ledgerflow serve --host 127.0.0.1 --port 8787
+```
+
 Auth default is already tightened:
 
-- without `LEDGERFLOW_API_KEY`, API is local-only
+- without key env vars, API is local-only
 - non-local API calls are denied
 
-When key mode is enabled, `/api/*` (except `/api/health`) requires either:
+Key behavior:
+
+- `/api/health` remains unauthenticated
+- `read` scope permits `GET`/`HEAD`
+- `write` scope permits mutating calls and also satisfies read access
+- `admin` scope includes `read` + `write`
+
+Auth headers:
 
 - `X-API-Key: <token>`
 - `Authorization: Bearer <token>`

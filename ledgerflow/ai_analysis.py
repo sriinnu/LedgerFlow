@@ -54,6 +54,18 @@ def _decimal_avg(values: list[Decimal]) -> Decimal:
     return sum(values, Decimal("0")) / Decimal(str(len(values)))
 
 
+def _decimal_abs(v: Decimal) -> Decimal:
+    return v if v >= 0 else -v
+
+
+def _clamp_decimal(v: Decimal, lo: Decimal, hi: Decimal) -> Decimal:
+    if v < lo:
+        return lo
+    if v > hi:
+        return hi
+    return v
+
+
 def _series_by_currency(transactions: list[dict[str, Any]], months: list[str]) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for month in months:
@@ -167,6 +179,10 @@ def _forecast_spend(month_points: list[dict[str, Any]], *, months_forward: int =
     else:
         deltas = [vals[i] - vals[i - 1] for i in range(1, len(vals))]
         slope = _decimal_avg(deltas)
+    avg_spend = _decimal_avg(vals)
+    avg_abs_delta = _decimal_avg([_decimal_abs(v) for v in (vals[i] - vals[i - 1] for i in range(1, len(vals)))]) if len(vals) > 1 else Decimal("0")
+    volatility = Decimal("0") if avg_spend <= 0 else _clamp_decimal(avg_abs_delta / avg_spend, Decimal("0"), Decimal("1"))
+    base_band_pct = _clamp_decimal(Decimal("0.08") + volatility * Decimal("0.70"), Decimal("0.08"), Decimal("0.40"))
 
     last_val = vals[-1]
     last_ref = _parse_month(months[-1])
@@ -176,7 +192,22 @@ def _forecast_spend(month_points: list[dict[str, Any]], *, months_forward: int =
         pred = last_val + slope * Decimal(str(i))
         if pred < 0:
             pred = Decimal("0")
-        out.append({"month": m, "projectedSpend": fmt_decimal(pred)})
+        step_scale = Decimal("1") + Decimal(str(i - 1)) * Decimal("0.25")
+        band = pred * base_band_pct * step_scale
+        lower = pred - band
+        if lower < 0:
+            lower = Decimal("0")
+        upper = pred + band
+        confidence = _clamp_decimal(Decimal("1") - (base_band_pct * step_scale * Decimal("1.2")), Decimal("0.05"), Decimal("0.95"))
+        out.append(
+            {
+                "month": m,
+                "projectedSpend": fmt_decimal(pred),
+                "projectedSpendLower": fmt_decimal(lower),
+                "projectedSpendUpper": fmt_decimal(upper),
+                "confidence": fmt_decimal(confidence),
+            }
+        )
     return out
 
 
@@ -251,6 +282,147 @@ def _heuristic_narrative(*, month: str, currency: str, month_points: list[dict[s
     base = f"For {month}, spend is {target.get('spend')} {currency}, income is {target.get('income')} {currency}, net is {target.get('net')} {currency}."
     tail = " ".join(insights[:3])
     return f"{base} {tail}".strip()
+
+
+def _recommendations(
+    *,
+    risk_flags: list[str],
+    top_categories: list[dict[str, Any]],
+    quality: dict[str, str],
+    month: str,
+) -> list[dict[str, Any]]:
+    recs: list[dict[str, Any]] = []
+    if "spend_spike" in risk_flags and top_categories:
+        top = top_categories[0]
+        recs.append(
+            {
+                "id": "spike_review_top_category",
+                "priority": "high",
+                "title": f"Review top category ({top['categoryId']}) spend",
+                "action": f"Set a temporary cap for {top['categoryId']} and review large debits above normal in {month}.",
+                "impact": "Can reduce next-month spend drift quickly.",
+            }
+        )
+    if "unclassified_high" in risk_flags:
+        recs.append(
+            {
+                "id": "resolve_unclassified",
+                "priority": "high",
+                "title": "Resolve unclassified transactions",
+                "action": "Use review queue to set categories for uncategorized transactions.",
+                "impact": "Improves report quality and alert precision.",
+            }
+        )
+    if "manual_high" in risk_flags:
+        recs.append(
+            {
+                "id": "link_cash_receipts",
+                "priority": "medium",
+                "title": "Attach receipts to manual/cash spend",
+                "action": "Link receipt docs and add merchant/category details for manual entries.",
+                "impact": "Reduces blind spots in month-end reconciliation.",
+            }
+        )
+    if not recs:
+        recs.append(
+            {
+                "id": "maintain_baseline",
+                "priority": "low",
+                "title": "Maintain current spend controls",
+                "action": "Keep recurring charges and top categories under weekly review.",
+                "impact": "Helps preserve stable spend behavior.",
+            }
+        )
+    return recs
+
+
+def _analysis_confidence(
+    *,
+    month_points: list[dict[str, Any]],
+    quality: dict[str, str],
+    provider_used: str,
+    llm_error: str | None,
+) -> dict[str, Any]:
+    score = Decimal("0.72")
+    reasons: list[str] = []
+
+    if len(month_points) < 3:
+        score -= Decimal("0.12")
+        reasons.append("short_history_window")
+    else:
+        score += Decimal("0.04")
+        reasons.append("sufficient_history")
+
+    unclassified_pct = Decimal(str(quality.get("unclassifiedPct") or "0"))
+    manual_pct = Decimal(str(quality.get("manualPct") or "0"))
+    if unclassified_pct > Decimal("20"):
+        score -= Decimal("0.15")
+        reasons.append("high_unclassified_spend")
+    elif unclassified_pct < Decimal("8"):
+        score += Decimal("0.05")
+        reasons.append("low_unclassified_spend")
+
+    if manual_pct > Decimal("35"):
+        score -= Decimal("0.10")
+        reasons.append("high_manual_ratio")
+
+    if provider_used in ("ollama", "openai"):
+        score += Decimal("0.04")
+        reasons.append("llm_narrative_enrichment")
+    if llm_error:
+        score -= Decimal("0.06")
+        reasons.append("llm_fallback_applied")
+
+    score = _clamp_decimal(score, Decimal("0.15"), Decimal("0.98"))
+    if score >= Decimal("0.80"):
+        level = "high"
+    elif score >= Decimal("0.60"):
+        level = "medium"
+    else:
+        level = "low"
+    return {"score": fmt_decimal(score), "level": level, "reasons": reasons}
+
+
+def _build_explainability(
+    *,
+    month: str,
+    risk_flags: list[str],
+    top_categories: list[dict[str, Any]],
+    quality: dict[str, str],
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    evidence: list[dict[str, Any]] = []
+    if "spend_spike" in risk_flags:
+        evidence.append(
+            {
+                "rule": "spend_spike",
+                "source": "datasets.monthlySpendTrend",
+                "explanation": f"Current month spend is materially above recent baseline for {month}.",
+                "metrics": {"spend": str(summary.get("spend") or "0"), "month": month},
+            }
+        )
+    if top_categories:
+        top = top_categories[0]
+        evidence.append(
+            {
+                "rule": "top_category",
+                "source": "topCategories",
+                "explanation": "Largest category contribution in selected month.",
+                "metrics": {"categoryId": top.get("categoryId"), "value": str(top.get("value") or "0")},
+            }
+        )
+    evidence.append(
+        {
+            "rule": "data_quality",
+            "source": "quality",
+            "explanation": "Coverage and confidence quality checks for categorized spend.",
+            "metrics": {
+                "unclassifiedPct": str(quality.get("unclassifiedPct") or "0"),
+                "manualPct": str(quality.get("manualPct") or "0"),
+            },
+        }
+    )
+    return {"evidence": evidence}
 
 
 def _prompt_from_context(context: dict[str, Any]) -> str:
@@ -335,15 +507,19 @@ def analyze_spending(
     forecast = _forecast_spend(month_points, months_forward=3)
     cat_trend = _category_trend(transactions, months=months, currency=primary_currency, top_categories=category_ids)
 
+    summary = next((p for p in month_points if p.get("month") == target), {})
+    recommendations = _recommendations(risk_flags=risk_flags, top_categories=top_categories, quality=quality, month=target)
+
     context = {
         "month": target,
         "currency": primary_currency,
-        "summary": next((p for p in month_points if p.get("month") == target), {}),
+        "summary": summary,
         "topCategories": top_categories[:5],
         "topMerchants": top_merchants[:5],
         "riskFlags": risk_flags,
         "quality": quality,
         "insights": insights,
+        "recommendations": recommendations[:3],
     }
     prompt = _prompt_from_context(context)
 
@@ -386,6 +562,20 @@ def analyze_spending(
             else:
                 llm_error = f"ollama: {err}; openai: {err2}"
 
+    explainability = _build_explainability(
+        month=target,
+        risk_flags=risk_flags,
+        top_categories=top_categories,
+        quality=quality,
+        summary=summary,
+    )
+    confidence = _analysis_confidence(
+        month_points=month_points,
+        quality=quality,
+        provider_used=used,
+        llm_error=llm_error,
+    )
+
     return {
         "month": target,
         "generatedAt": utc_now_iso(),
@@ -399,6 +589,9 @@ def analyze_spending(
         "topMerchants": top_merchants,
         "riskFlags": risk_flags,
         "insights": insights,
+        "recommendations": recommendations,
+        "confidence": confidence,
+        "explainability": explainability,
         "narrative": narrative,
         "datasets": {
             "monthlySpendTrend": month_points,

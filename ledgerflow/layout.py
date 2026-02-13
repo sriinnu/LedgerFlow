@@ -41,6 +41,22 @@ class Layout:
         return self.data_dir / "charts"
 
     @property
+    def automation_dir(self) -> Path:
+        return self.data_dir / "automation"
+
+    @property
+    def automation_jobs_path(self) -> Path:
+        return self.automation_dir / "jobs.json"
+
+    @property
+    def automation_state_path(self) -> Path:
+        return self.automation_dir / "state.json"
+
+    @property
+    def automation_queue_path(self) -> Path:
+        return self.automation_dir / "queue.json"
+
+    @property
     def alerts_dir(self) -> Path:
         return self.data_dir / "alerts"
 

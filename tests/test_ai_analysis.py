@@ -57,6 +57,13 @@ class TestAiAnalysis(unittest.TestCase):
             self.assertEqual(len((out.get("datasets") or {}).get("monthlySpendTrend") or []), 3)
             self.assertEqual(len((out.get("datasets") or {}).get("spendForecast") or []), 3)
             self.assertIn("totalSpend", out.get("quality") or {})
+            self.assertGreaterEqual(len(out.get("recommendations") or []), 1)
+            self.assertIn("confidence", out)
+            self.assertIn("explainability", out)
+            forecast = (out.get("datasets") or {}).get("spendForecast") or []
+            self.assertIn("projectedSpendLower", forecast[0])
+            self.assertIn("projectedSpendUpper", forecast[0])
+            self.assertIn("confidence", forecast[0])
 
     def test_invalid_month(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -141,3 +148,14 @@ class TestAiAnalysis(unittest.TestCase):
             self.assertIsNone(out["llmError"])
             self.assertEqual(openai_mock.call_count, 1)
             self.assertEqual(openai_mock.call_args.kwargs.get("model"), "gpt-4.1-mini")
+
+    def test_confidence_level_and_reasons_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            layout = layout_for(Path(td) / "data")
+            init_data_layout(layout, write_defaults=False)
+            _seed_transactions(layout)
+
+            out = analyze_spending(layout, month="2026-02", provider="heuristic", lookback_months=3)
+            confidence = out.get("confidence") or {}
+            self.assertIn(confidence.get("level"), {"low", "medium", "high"})
+            self.assertTrue(isinstance(confidence.get("reasons"), list))

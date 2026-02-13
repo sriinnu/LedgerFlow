@@ -15,10 +15,41 @@ OpenAPI:
 
 Auth behavior:
 
-- Default without `LEDGERFLOW_API_KEY`: API allows local clients only (`127.0.0.1`, `::1`).
-- Non-local API access is denied unless an API key is configured.
-- With `LEDGERFLOW_API_KEY=<token>` set: `/api/*` routes (except `/api/health`) require auth header.
-- Send auth via `X-API-Key: <token>` or `Authorization: Bearer <token>`.
+- Without key env vars, API allows local clients only (`127.0.0.1`, `::1`).
+- Non-local API access is denied unless keys are configured.
+- Auth headers are accepted as:
+  - `X-API-Key: <token>`
+  - `Authorization: Bearer <token>`
+- Env vars:
+  - `LEDGERFLOW_API_KEY=<token>`: legacy single full-access key.
+  - `LEDGERFLOW_API_KEYS=<json>`: scoped keys (preferred).
+
+`LEDGERFLOW_API_KEYS` JSON formats:
+
+```json
+[
+  { "id": "reader", "key": "reader-token", "scopes": ["read"] },
+  { "id": "writer", "key": "writer-token", "scopes": ["write"] },
+  { "id": "ops", "key": "ops-token", "scopes": ["admin"] }
+]
+```
+
+or:
+
+```json
+{
+  "reader": { "key": "reader-token", "scopes": ["read"] },
+  "writer": { "key": "writer-token", "scopes": ["write"] }
+}
+```
+
+Scope rules:
+
+- `/api/health` is always unauthenticated.
+- `GET`/`HEAD` require `read`.
+- mutating methods (`POST`, etc.) require `write`.
+- `write` implicitly satisfies `read`.
+- `admin` satisfies both `read` and `write`.
 
 ## Health
 
@@ -29,6 +60,12 @@ Response:
 ```json
 { "status": "ok", "version": "0.2.0", "dataDir": "data", "authEnabled": false, "authMode": "local_only_no_key" }
 ```
+
+`authMode` values:
+
+- `local_only_no_key`
+- `api_key` (legacy key)
+- `api_key_scoped` (any scoped key configured)
 
 ## OCR
 
@@ -210,6 +247,41 @@ Body:
 }
 ```
 
+## Import Bank JSON Upload
+
+`POST /api/import/bank-json-upload` (multipart/form-data)
+
+Fields:
+
+- `file` (required)
+- `commit` (`true|false`, default `false`)
+- `copy_into_sources` (`true|false`, default `false`)
+- `currency` (default `USD`)
+- `sample` (default `5`)
+- `max_rows` (optional)
+
+Input JSON file may be either:
+
+- a list of transaction objects, or
+- an object with `transactions: [...]`.
+
+## Import Bank JSON From Path
+
+`POST /api/import/bank-json-path`
+
+Body:
+
+```json
+{
+  "path": "/absolute/or/relative/path/to/file.json",
+  "commit": false,
+  "copyIntoSources": false,
+  "currency": "USD",
+  "sample": 5,
+  "maxRows": 200
+}
+```
+
 ## Import Receipt / Bill Upload
 
 `POST /api/import/receipt-upload` (multipart/form-data)
@@ -311,9 +383,46 @@ Response shape (`200`):
 - `summary` (target-month `spend`, `income`, `net`)
 - `quality` (`totalSpend`, `unclassifiedSpend`, `unclassifiedPct`, `manualSpend`, `manualPct`)
 - `topCategories`, `topMerchants`
-- `riskFlags`, `insights`, `narrative`
+- `riskFlags`, `insights`, `recommendations`, `narrative`
+- `confidence` (`level`, `score`, `reasons`)
+- `explainability.evidence` (rule-level evidence summary)
 - `datasets.monthlySpendTrend`, `datasets.categoryTrend`, `datasets.spendForecast`
 - `llmError` (set when a model provider fails and heuristic fallback is used)
+
+## Automation
+
+Queue listing:
+
+- `GET /api/automation/tasks?limit=100&status=queued,running`
+
+Enqueue task:
+
+- `POST /api/automation/tasks`
+- body:
+
+```json
+{
+  "taskType": "build",
+  "payload": {},
+  "runAt": "2026-02-13T09:00:00Z",
+  "maxRetries": 2
+}
+```
+
+Run one worker step:
+
+- `POST /api/automation/run-next`
+- body (optional): `{ "workerId": "api-worker" }`
+
+Enqueue scheduled jobs due now:
+
+- `POST /api/automation/run-due`
+- body (optional): `{ "at": "2026-02-13T09:00:00Z" }`
+
+Jobs config:
+
+- `GET /api/automation/jobs`
+- `POST /api/automation/jobs` (replace jobs document)
 
 ## Alerts
 

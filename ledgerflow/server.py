@@ -11,6 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .ai_analysis import analyze_spending
 from .alerts import run_alerts
+from .auth import auth_mode_for_store, key_has_scope, load_api_key_store_from_env, scope_for_request
+from .automation import enqueue_due_jobs, enqueue_task, list_tasks, read_jobs, run_next_task, write_jobs
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
 from .charts import build_category_breakdown_month, build_series, build_merchant_top_month
@@ -19,6 +21,7 @@ from .dedup import mark_manual_duplicates_against_bank
 from .documents import import_and_parse_bill, import_and_parse_receipt
 from .extraction import extract_text, ocr_capabilities
 from .exporting import export_transactions_csv
+from .integration_bank_json import import_bank_json_path
 from .index_db import has_source_hash, index_stats, recent_transactions, rebuild_index
 from .jsonl import read_jsonl
 from .layout import Layout, layout_for
@@ -173,9 +176,10 @@ def create_app(data_dir: str | None = None) -> FastAPI:
 
     layout = layout_for(data_dir)
     app.state.layout = layout
-    api_key = os.environ.get("LEDGERFLOW_API_KEY") or ""
-    app.state.api_key_required = bool(api_key)
-    app.state.auth_mode = "api_key" if api_key else "local_only_no_key"
+    key_store = load_api_key_store_from_env()
+    app.state.api_keys = key_store
+    app.state.api_key_required = bool(key_store)
+    app.state.auth_mode = auth_mode_for_store(key_store)
 
     # Ensure directories exist, but do not write defaults automatically.
     init_data_layout(layout, write_defaults=False)
@@ -186,19 +190,27 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         method = request.method.upper()
         is_api = path.startswith("/api/")
         is_local = _is_local_client(request)
-        requires_auth = bool(api_key) and is_api and (path != "/api/health") and (method != "OPTIONS")
+        required_scope = scope_for_request(method, path) if is_api else None
+        requires_auth = bool(key_store) and (required_scope is not None)
         denied = False
         deny_reason = None
+        auth_key_id = None
 
         if requires_auth:
             presented = _api_key_from_request(request)
-            if presented != api_key:
+            key_meta = key_store.get(presented)
+            if not key_meta:
                 denied = True
                 deny_reason = "missing_or_invalid_api_key"
                 response = JSONResponse(status_code=401, content={"detail": "API key required"})
+            elif not key_has_scope(key_meta, str(required_scope)):
+                denied = True
+                deny_reason = "insufficient_scope"
+                response = JSONResponse(status_code=403, content={"detail": f"Insufficient scope. Required: {required_scope}"})
             else:
+                auth_key_id = str(key_meta.get("id") or "")
                 response = await call_next(request)
-        elif is_api and (path != "/api/health") and (method != "OPTIONS") and not is_local:
+        elif is_api and (required_scope is not None) and not is_local:
             denied = True
             deny_reason = "non_local_client_without_api_key"
             response = JSONResponse(
@@ -218,6 +230,8 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 "client": (request.client.host if request.client else None),
                 "userAgent": request.headers.get("user-agent"),
                 "authRequired": requires_auth,
+                "authScopeRequired": required_scope,
+                "authKeyId": auth_key_id,
                 "authMode": str(getattr(app.state, "auth_mode", "unknown")),
                 "authDenied": denied,
                 "authDenyReason": deny_reason,
@@ -246,6 +260,22 @@ def create_app(data_dir: str | None = None) -> FastAPI:
             "dataDir": str(layout.data_dir),
             "authEnabled": bool(getattr(request.app.state, "api_key_required", False)),
             "authMode": str(getattr(request.app.state, "auth_mode", "unknown")),
+        }
+
+    @app.get("/api/auth/context")
+    def auth_context(request: Request) -> dict[str, Any]:
+        store = getattr(request.app.state, "api_keys", {})
+        if not isinstance(store, dict):
+            store = {}
+        presented = _api_key_from_request(request)
+        meta = store.get(presented) if presented else None
+        return {
+            "authEnabled": bool(getattr(request.app.state, "api_key_required", False)),
+            "authMode": str(getattr(request.app.state, "auth_mode", "unknown")),
+            "keyCount": len(store),
+            "authenticated": bool(meta),
+            "keyId": str(meta.get("id")) if isinstance(meta, dict) and meta.get("id") else None,
+            "scopes": list(meta.get("scopes") or []) if isinstance(meta, dict) else [],
         }
 
     @app.get("/api/ocr/capabilities")
@@ -439,6 +469,57 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 model=model,
                 lookback_months=lookback,
             )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    @app.get("/api/automation/tasks")
+    def api_automation_tasks(request: Request, limit: int = 100, status: str | None = None) -> dict[str, Any]:
+        layout = _get_layout(request)
+        items = list_tasks(layout, limit=limit, status=status)
+        return {"items": items, "count": len(items)}
+
+    @app.post("/api/automation/tasks")
+    def api_automation_enqueue(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        layout = _get_layout(request)
+        task_type = str(payload.get("taskType") or "").strip()
+        if not task_type:
+            raise HTTPException(status_code=400, detail="taskType is required")
+        task_payload = payload.get("payload")
+        if task_payload is None:
+            task_payload = {}
+        if not isinstance(task_payload, dict):
+            raise HTTPException(status_code=400, detail="payload must be an object")
+        task = enqueue_task(
+            layout,
+            task_type=task_type,
+            payload=task_payload,
+            run_at=(str(payload["runAt"]) if payload.get("runAt") else None),
+            max_retries=int(payload.get("maxRetries") or 2),
+            source="api",
+        )
+        return {"task": task}
+
+    @app.post("/api/automation/run-next")
+    def api_automation_run_next(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        layout = _get_layout(request)
+        worker_id = str(payload.get("workerId") or "api-worker")
+        return run_next_task(layout, worker_id=worker_id)
+
+    @app.post("/api/automation/run-due")
+    def api_automation_run_due(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        layout = _get_layout(request)
+        return enqueue_due_jobs(layout, at=(str(payload["at"]) if payload.get("at") else None))
+
+    @app.get("/api/automation/jobs")
+    def api_automation_jobs(request: Request) -> dict[str, Any]:
+        layout = _get_layout(request)
+        return read_jobs(layout)
+
+    @app.post("/api/automation/jobs")
+    def api_automation_jobs_set(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        layout = _get_layout(request)
+        try:
+            return write_jobs(layout, payload)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -642,6 +723,33 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         result["savedPath"] = str(saved)
         return JSONResponse(result)
 
+    @app.post("/api/import/bank-json-upload")
+    def api_import_bank_json_upload(
+        request: Request,
+        file: UploadFile = File(...),
+        commit: bool = Form(default=False),
+        copy_into_sources: bool = Form(default=False),
+        currency: str = Form(default="USD"),
+        sample: int = Form(default=5),
+        max_rows: int | None = Form(default=None),
+    ) -> JSONResponse:
+        layout = _get_layout(request)
+        saved = _save_upload_to_inbox(layout, file)
+        try:
+            out = import_bank_json_path(
+                layout,
+                saved,
+                commit=bool(commit),
+                copy_into_sources=bool(copy_into_sources),
+                default_currency=str(currency),
+                sample=int(sample),
+                max_rows=(int(max_rows) if max_rows is not None else None),
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        out["savedPath"] = str(saved)
+        return JSONResponse(out)
+
     @app.post("/api/import/receipt-upload")
     def api_import_receipt_upload(
         request: Request,
@@ -750,5 +858,25 @@ def create_app(data_dir: str | None = None) -> FastAPI:
             },
         )
         return JSONResponse(result)
+
+    @app.post("/api/import/bank-json-path")
+    def api_import_bank_json_path(request: Request, payload: dict[str, Any] = Body(...)) -> JSONResponse:
+        layout = _get_layout(request)
+        path = str(payload.get("path") or "").strip()
+        if not path:
+            raise HTTPException(status_code=400, detail="path is required")
+        try:
+            out = import_bank_json_path(
+                layout,
+                path,
+                commit=bool(payload.get("commit") or False),
+                copy_into_sources=bool(payload.get("copyIntoSources") or False),
+                default_currency=str(payload.get("currency") or "USD"),
+                sample=int(payload.get("sample") or 5),
+                max_rows=(int(payload["maxRows"]) if payload.get("maxRows") is not None else None),
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return JSONResponse(out)
 
     return app

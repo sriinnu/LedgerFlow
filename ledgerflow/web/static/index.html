@@ -307,6 +307,18 @@
               <span class="ai-summary-label">Fallback note</span>
               <span class="ai-summary-value" id="ai-summary-fallback">Not run yet.</span>
             </div>
+            <div class="ai-summary-item">
+              <span class="ai-summary-label">Confidence level</span>
+              <span class="ai-summary-value" id="ai-confidence-level">-</span>
+            </div>
+            <div class="ai-summary-item">
+              <span class="ai-summary-label">Confidence score</span>
+              <span class="ai-summary-value" id="ai-confidence-score">-</span>
+            </div>
+            <div class="ai-summary-item full">
+              <span class="ai-summary-label">Confidence reasons</span>
+              <span class="ai-summary-value" id="ai-confidence-reasons">-</span>
+            </div>
           </div>
           <label class="full">
             Narrative
@@ -316,10 +328,56 @@
             Key Insights
             <textarea id="ai-insights" rows="6"></textarea>
           </label>
+          <label class="full">
+            Recommendations
+            <textarea id="ai-recommendations" rows="6"></textarea>
+          </label>
+          <label class="full">
+            Explainability Evidence
+            <textarea id="ai-evidence" rows="6"></textarea>
+          </label>
           <label class="full chart-block">
             Spend Trend + Forecast
             <canvas id="ai-forecast-canvas" width="1000" height="280"></canvas>
           </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Automation</h2>
+        <div class="grid">
+          <label>
+            Queue limit
+            <input id="automation-limit" type="number" value="12" min="1" max="200" />
+          </label>
+          <label>
+            Status filter (optional)
+            <input id="automation-status" type="text" placeholder="queued,running,done,failed" />
+          </label>
+          <div class="actions full automation-actions">
+            <button id="automation-enqueue-build-btn" type="button">Enqueue Build Task</button>
+            <button id="automation-run-due-btn" type="button">Run Due Jobs</button>
+            <button id="automation-run-next-btn" type="button">Run Next Task</button>
+            <button id="automation-refresh-btn" type="button">Refresh Queue</button>
+            <div class="muted" id="automation-result"></div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="automation-table">
+            <thead>
+              <tr>
+                <th>Task ID</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Attempts</th>
+                <th>Available At</th>
+                <th>Updated</th>
+                <th>Source</th>
+                <th class="wrap">Result / Error</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
         </div>
       </section>
 

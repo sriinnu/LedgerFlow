@@ -121,6 +121,31 @@ Date parsing:
 - Use `--date-format` (recommended if your CSV uses `MM/DD/YYYY` or other ambiguous formats)
 - Or set `--day-first` for `DD/MM/YYYY` when guessing slash dates
 
+## Import Bank JSON
+
+Dry-run (prints normalized transaction samples):
+
+```bash
+python3 -m ledgerflow import bank-json data/inbox/bank/export.json --sample 5
+```
+
+Commit import:
+
+```bash
+python3 -m ledgerflow import bank-json data/inbox/bank/export.json --commit
+```
+
+Useful flags:
+
+- `--currency USD` (default currency if rows omit it)
+- `--copy-into-sources` (store original file under `data/sources/<docId>/`)
+- `--max-rows <n>` (limit processed rows)
+
+Input shape:
+
+- JSON list of transaction objects, or
+- object containing `transactions: [...]`
+
 ## Import Receipts / Bills
 
 Import + parse a receipt (supports `*.txt` out of the box; `*.pdf`/images require optional dependencies in `requirements.txt`):
@@ -333,6 +358,39 @@ Resolve a transaction review item via CorrectionEvent patch:
 python3 -m ledgerflow review resolve --tx-id tx_... --set-category groceries
 ```
 
+## Automation Queue + Scheduler
+
+List queue tasks:
+
+```bash
+python3 -m ledgerflow automation tasks --limit 25
+python3 -m ledgerflow automation tasks --status queued,running
+```
+
+Enqueue a task:
+
+```bash
+python3 -m ledgerflow automation enqueue --task-type build
+python3 -m ledgerflow automation enqueue \
+  --task-type alerts.run \
+  --payload-json '{"at":"2026-02-10","commit":true}'
+```
+
+Run scheduler and worker steps:
+
+```bash
+python3 -m ledgerflow automation run-due
+python3 -m ledgerflow automation run-next --worker-id cli-worker
+python3 -m ledgerflow automation worker --worker-id cli-worker --max-tasks 20
+```
+
+Manage job definitions:
+
+```bash
+python3 -m ledgerflow automation jobs-list
+python3 -m ledgerflow automation jobs-set --file data/automation/jobs.json
+```
+
 ## Run Webapp + API Server
 
 ```bash
@@ -342,3 +400,34 @@ python3 -m ledgerflow serve --host 127.0.0.1 --port 8787
 Dev-only:
 
 - `--reload` enables auto-reload
+
+Auth environment variables:
+
+- `LEDGERFLOW_API_KEY=<token>`: legacy full-access key
+- `LEDGERFLOW_API_KEYS=<json>`: scoped key store (preferred)
+
+`LEDGERFLOW_API_KEYS` accepted JSON shapes:
+
+```bash
+# list shape
+LEDGERFLOW_API_KEYS='[
+  {"id":"reader","key":"reader-token","scopes":["read"]},
+  {"id":"writer","key":"writer-token","scopes":["write"]},
+  {"id":"ops","key":"ops-token","scopes":["admin"]}
+]'
+```
+
+```bash
+# object shape
+LEDGERFLOW_API_KEYS='{
+  "reader": {"key":"reader-token","scopes":["read"]},
+  "writer": {"key":"writer-token","scopes":["write"]}
+}'
+```
+
+Scope behavior:
+
+- `read`: allows `GET`/`HEAD` `/api/*` routes
+- `write`: allows mutating methods and implicitly covers `read`
+- `admin`: includes both `read` and `write`
+- `/api/health` is always unauthenticated
