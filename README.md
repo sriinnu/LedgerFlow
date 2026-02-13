@@ -9,6 +9,7 @@ LedgerFlow is a local-first bills and receipts money tracker with:
 - CLI + FastAPI + web UI
 - OCR/PDF ingestion for receipts and bills
 - reports, alerts, and chart datasets
+- AI spending analysis (local-first + optional LLM narratives)
 - review queue and reconciliation workflows
 
 ## Highlights
@@ -61,6 +62,20 @@ python3 -m ledgerflow report daily --date 2026-02-10
 python3 -m ledgerflow report monthly --month 2026-02
 python3 -m ledgerflow charts series --from-date 2026-02-01 --to-date 2026-02-29
 python3 -m ledgerflow alerts run --at 2026-02-10
+python3 -m ledgerflow ai analyze --month 2026-02 --provider heuristic
+```
+
+## AI Analysis (Local Models + LLMs)
+
+```bash
+# local heuristic only
+python3 -m ledgerflow ai analyze --month 2026-02 --provider heuristic --json
+
+# local model via Ollama
+python3 -m ledgerflow ai analyze --month 2026-02 --provider ollama --model llama3.1:8b --json
+
+# auto (ollama -> openai -> heuristic fallback)
+python3 -m ledgerflow ai analyze --month 2026-02 --provider auto --json
 ```
 
 ## OCR Through CLI

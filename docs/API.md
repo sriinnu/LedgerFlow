@@ -269,6 +269,28 @@ Fetch markdown:
 - `POST /api/charts/series` body: `{ "fromDate": "2026-02-01", "toDate": "2026-02-29" }`
 - `POST /api/charts/month` body: `{ "month": "2026-02", "limit": 25 }`
 
+## AI Analysis
+
+- `POST /api/ai/analyze`
+
+Example payload:
+
+```json
+{
+  "month": "2026-02",
+  "provider": "auto",
+  "model": null,
+  "lookbackMonths": 6
+}
+```
+
+Providers:
+
+- `auto` (tries `ollama`, then `openai`, then local heuristic)
+- `heuristic` (no external model calls)
+- `ollama` (local model endpoint)
+- `openai`
+
 ## Alerts
 
 - `POST /api/alerts/run` body: `{ "at": "2026-02-10", "commit": true }`

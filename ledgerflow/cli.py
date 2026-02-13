@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from .ai_analysis import analyze_spending
 from .extraction import extract_text, ocr_capabilities
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
@@ -258,6 +259,32 @@ def _cmd_export_csv(args: argparse.Namespace) -> int:
         include_deleted=args.include_deleted,
     )
     print(out)
+    return 0
+
+
+def _cmd_ai_analyze(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    month = args.month or today_ymd()[:7]
+    out = analyze_spending(
+        layout,
+        month=month,
+        provider=args.provider,
+        model=args.model,
+        lookback_months=args.lookback_months,
+    )
+    if args.json:
+        print(json.dumps(out, ensure_ascii=False))
+        return 0
+
+    print(out.get("narrative") or "")
+    print("")
+    print("Insights:")
+    for row in out.get("insights") or []:
+        print(f"- {row}")
+    if out.get("llmError"):
+        print("")
+        print(f"LLM fallback note: {out['llmError']}")
     return 0
 
 
@@ -573,6 +600,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_ecsv.add_argument("--to-date", help="YYYY-MM-DD (inclusive)")
     p_ecsv.add_argument("--include-deleted", action="store_true")
     p_ecsv.set_defaults(func=_cmd_export_csv)
+
+    p_ai = sub.add_parser("ai", help="AI-powered spending analysis and narratives.")
+    sub_ai = p_ai.add_subparsers(dest="ai_cmd", required=True)
+
+    p_ai_an = sub_ai.add_parser("analyze", help="Analyze spending for a month and return insights.")
+    p_ai_an.add_argument("--month", help="YYYY-MM (default: current month)")
+    p_ai_an.add_argument(
+        "--provider",
+        default="auto",
+        choices=("auto", "heuristic", "ollama", "openai"),
+        help="Narrative provider strategy.",
+    )
+    p_ai_an.add_argument("--model", help="Optional model override (provider-specific).")
+    p_ai_an.add_argument("--lookback-months", type=int, default=6, help="History window including target month.")
+    p_ai_an.add_argument("--json", action="store_true", help="Emit full JSON output.")
+    p_ai_an.set_defaults(func=_cmd_ai_analyze)
 
     p_review = sub.add_parser("review", help="Review queue and resolution helpers.")
     sub_review = p_review.add_subparsers(dest="review_cmd", required=True)

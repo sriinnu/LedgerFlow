@@ -36,6 +36,11 @@ This file maps implementation status to the milestones defined in `SKILL.md`.
   - spend time series
   - category breakdown
   - top merchants.
+- AI analysis layer:
+  - `/api/ai/analyze`
+  - `ai analyze` CLI
+  - local heuristic insights + optional `ollama` / `openai` narratives
+  - trend + forecast datasets for web charting.
 - Optional API key auth (`LEDGERFLOW_API_KEY`) + audit log (`data/meta/audit.jsonl`).
 - Delivery tooling:
   - `pyproject.toml`

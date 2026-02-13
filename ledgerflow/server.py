@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .ai_analysis import analyze_spending
 from .alerts import run_alerts
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
@@ -420,6 +421,26 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         data1 = build_category_breakdown_month(layout, month=month)
         data2 = build_merchant_top_month(layout, month=month, limit=int(payload.get("limit") or 25))
         return {"categoryBreakdown": data1, "merchantTop": data2}
+
+    @app.post("/api/ai/analyze")
+    def api_ai_analyze(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        layout = _get_layout(request)
+        month = str(payload.get("month") or today_ymd()[:7]).strip()
+        provider = str(payload.get("provider") or "auto")
+        model = payload.get("model")
+        if model is not None:
+            model = str(model)
+        lookback = int(payload.get("lookbackMonths") or 6)
+        try:
+            return analyze_spending(
+                layout,
+                month=month,
+                provider=provider,
+                model=model,
+                lookback_months=lookback,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
     @app.post("/api/alerts/run")
     def api_alerts_run(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:

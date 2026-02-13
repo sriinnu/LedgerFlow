@@ -156,6 +156,12 @@ class TestApi(unittest.TestCase):
             ar = client.post("/api/alerts/run", json={"at": "2026-02-10", "commit": False})
             self.assertEqual(ar.status_code, 200)
 
+            ai = client.post("/api/ai/analyze", json={"month": "2026-02", "provider": "heuristic", "lookbackMonths": 3})
+            self.assertEqual(ai.status_code, 200)
+            aj = ai.json()
+            self.assertEqual(aj["providerUsed"], "heuristic")
+            self.assertIn("datasets", aj)
+
     def test_review_queue_and_resolve(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             data_dir = Path(td) / "data"

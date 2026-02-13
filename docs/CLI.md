@@ -238,6 +238,32 @@ Monthly breakdown datasets:
 python3 -m ledgerflow charts month --month 2026-02
 ```
 
+## AI Spending Analysis
+
+Run AI/local-model assisted spending analysis:
+
+```bash
+python3 -m ledgerflow ai analyze --month 2026-02 --provider auto --json
+```
+
+Local-only heuristic analysis:
+
+```bash
+python3 -m ledgerflow ai analyze --month 2026-02 --provider heuristic
+```
+
+Local model via Ollama:
+
+```bash
+python3 -m ledgerflow ai analyze --month 2026-02 --provider ollama --model llama3.1:8b --json
+```
+
+Flags:
+
+- `--provider auto|heuristic|ollama|openai`
+- `--model <name>` (optional override)
+- `--lookback-months <n>` (default: `6`)
+
 ## Alerts
 
 Run alerts for a date (default: today). This reads `data/alerts/alert_rules.json` and writes:

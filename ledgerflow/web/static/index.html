@@ -262,6 +262,49 @@
       </section>
 
       <section class="card">
+        <h2>AI Insights</h2>
+        <div class="grid">
+          <label>
+            Analysis month (YYYY-MM)
+            <input id="ai-month" type="text" placeholder="2026-02" />
+          </label>
+          <label>
+            Narrative provider
+            <select id="ai-provider">
+              <option value="auto" selected>auto (ollama/openai -> heuristic)</option>
+              <option value="heuristic">heuristic only</option>
+              <option value="ollama">ollama (local model)</option>
+              <option value="openai">openai</option>
+            </select>
+          </label>
+          <label>
+            Model override (optional)
+            <input id="ai-model" type="text" placeholder="llama3.1:8b or gpt-4.1-mini" />
+          </label>
+          <label>
+            Lookback months
+            <input id="ai-lookback" type="number" min="1" max="24" value="6" />
+          </label>
+          <div class="actions full">
+            <button id="ai-run-btn" type="button">Run AI Analysis</button>
+            <div class="muted" id="ai-result"></div>
+          </div>
+          <label class="full">
+            Narrative
+            <textarea id="ai-narrative" rows="4"></textarea>
+          </label>
+          <label class="full">
+            Key Insights
+            <textarea id="ai-insights" rows="6"></textarea>
+          </label>
+          <label class="full chart-block">
+            Spend Trend + Forecast
+            <canvas id="ai-forecast-canvas" width="1000" height="280"></canvas>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
         <h2>Review Queue</h2>
         <div class="grid">
           <label>

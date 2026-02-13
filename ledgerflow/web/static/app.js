@@ -289,6 +289,110 @@ async function refreshCharts() {
   }
 }
 
+function drawAiForecast(historyPoints, forecastPoints) {
+  const canvas = document.getElementById("ai-forecast-canvas");
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  const ctx = clearCanvas(canvas);
+
+  const history = (historyPoints || []).map((p) => ({ month: String(p.month || ""), spend: toNum(p.spend) })).filter((p) => p.month);
+  const forecast = (forecastPoints || [])
+    .map((p) => ({ month: String(p.month || ""), spend: toNum(p.projectedSpend) }))
+    .filter((p) => p.month);
+
+  const all = [...history, ...forecast];
+  if (all.length === 0) {
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    ctx.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillText("No trend data.", 18, 26);
+    return;
+  }
+
+  const pad = { l: 56, r: 18, t: 18, b: 28 };
+  const w = canvas.width - pad.l - pad.r;
+  const h = canvas.height - pad.t - pad.b;
+  const labels = all.map((p) => p.month);
+  const vals = all.map((p) => p.spend);
+  const yMax = Math.max(...vals, 1);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t);
+  ctx.lineTo(pad.l, pad.t + h);
+  ctx.lineTo(pad.l + w, pad.t + h);
+  ctx.stroke();
+
+  const xFor = (i) => pad.l + (i / Math.max(1, labels.length - 1)) * w;
+  const yFor = (v) => pad.t + h - (v / yMax) * h;
+
+  if (history.length > 0) {
+    ctx.strokeStyle = "rgba(82, 183, 255, 0.95)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    history.forEach((p, i) => {
+      const x = xFor(i);
+      const y = yFor(p.spend);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+
+  if (forecast.length > 0) {
+    ctx.strokeStyle = "rgba(134, 255, 168, 0.95)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    const startIdx = Math.max(0, history.length - 1);
+    const startVal = history.length > 0 ? history[history.length - 1].spend : forecast[0].spend;
+    ctx.moveTo(xFor(startIdx), yFor(startVal));
+    forecast.forEach((p, i) => {
+      const x = xFor(history.length + i);
+      const y = yFor(p.spend);
+      ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.fillStyle = "rgba(255,255,255,0.80)";
+  ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
+  ctx.fillText(`Max spend ${yMax.toFixed(2)}`, pad.l + 6, pad.t + 14);
+  ctx.fillText(labels[0], pad.l, canvas.height - 8);
+  ctx.fillText(labels[labels.length - 1], canvas.width - 90, canvas.height - 8);
+}
+
+async function refreshAiInsights() {
+  const out = document.getElementById("ai-result");
+  const month = (document.getElementById("ai-month").value || "").trim();
+  const provider = document.getElementById("ai-provider").value || "auto";
+  const model = (document.getElementById("ai-model").value || "").trim();
+  const lookback = parseInt(document.getElementById("ai-lookback").value || "6", 10);
+  const narrativeEl = document.getElementById("ai-narrative");
+  const insightsEl = document.getElementById("ai-insights");
+
+  out.textContent = "working...";
+  try {
+    const data = await apiPostJson("/api/ai/analyze", {
+      month,
+      provider,
+      model: model || null,
+      lookbackMonths: Number.isFinite(lookback) ? lookback : 6,
+    });
+    const insights = data.insights || [];
+    narrativeEl.value = data.narrative || "";
+    insightsEl.value = insights.map((x, i) => `${i + 1}. ${x}`).join("\n");
+    const ds = data.datasets || {};
+    drawAiForecast(ds.monthlySpendTrend || [], ds.spendForecast || []);
+    const riskCount = (data.riskFlags || []).length;
+    const llmNote = data.llmError ? " (LLM fallback used)" : "";
+    out.textContent = `provider=${data.providerUsed || "heuristic"} risks=${riskCount}${llmNote}`;
+  } catch (e) {
+    out.textContent = `error: ${String(e.message || e)}`;
+  }
+}
+
 async function boot() {
   try {
     const h = await apiGet("/api/health");
@@ -318,6 +422,8 @@ async function boot() {
   }
   if (chartsTo && !chartsTo.value) chartsTo.value = t;
   if (chartsMonth && !chartsMonth.value) chartsMonth.value = t.slice(0, 7);
+  const aiMonth = document.getElementById("ai-month");
+  if (aiMonth && !aiMonth.value) aiMonth.value = t.slice(0, 7);
 
   document.getElementById("manual-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -572,6 +678,9 @@ async function boot() {
   document.getElementById("charts-refresh-btn").addEventListener("click", async () => {
     await refreshCharts();
   });
+  document.getElementById("ai-run-btn").addEventListener("click", async () => {
+    await refreshAiInsights();
+  });
 
   document.querySelector("#review-table tbody").addEventListener("click", async (ev) => {
     const target = ev.target;
@@ -602,6 +711,7 @@ async function boot() {
 
   await refreshReviewQueue();
   await refreshCharts();
+  await refreshAiInsights();
   await refresh();
 }
 

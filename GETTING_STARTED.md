@@ -72,6 +72,7 @@ python3 -m ledgerflow report monthly --month 2026-02
 python3 -m ledgerflow charts series --from-date 2026-02-01 --to-date 2026-02-29
 python3 -m ledgerflow charts month --month 2026-02
 python3 -m ledgerflow alerts run --at 2026-02-10
+python3 -m ledgerflow ai analyze --month 2026-02 --provider heuristic
 ```
 
 ## 6) Review Queue + Resolution

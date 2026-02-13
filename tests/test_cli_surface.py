@@ -16,6 +16,7 @@ class TestCliSurface(unittest.TestCase):
         self.assertIn("serve", choices)
         self.assertIn("report", choices)
         self.assertIn("review", choices)
+        self.assertIn("ai", choices)
 
     def test_ocr_extract_flags(self) -> None:
         parser = build_parser()
@@ -48,3 +49,26 @@ class TestCliSurface(unittest.TestCase):
         self.assertEqual(ns.path, "receipt.jpg")
         self.assertEqual(ns.image_provider, "openai")
         self.assertTrue(ns.no_preprocess)
+
+    def test_ai_analyze_flags(self) -> None:
+        parser = build_parser()
+        ns = parser.parse_args(
+            [
+                "ai",
+                "analyze",
+                "--month",
+                "2026-02",
+                "--provider",
+                "ollama",
+                "--model",
+                "llama3.1:8b",
+                "--lookback-months",
+                "9",
+                "--json",
+            ]
+        )
+        self.assertEqual(ns.month, "2026-02")
+        self.assertEqual(ns.provider, "ollama")
+        self.assertEqual(ns.model, "llama3.1:8b")
+        self.assertEqual(ns.lookback_months, 9)
+        self.assertTrue(ns.json)
