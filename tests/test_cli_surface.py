@@ -20,6 +20,7 @@ class TestCliSurface(unittest.TestCase):
         self.assertIn("automation", choices)
         self.assertIn("backup", choices)
         self.assertIn("ops", choices)
+        self.assertIn("connectors", choices)
 
     def test_ocr_extract_flags(self) -> None:
         parser = build_parser()
@@ -160,3 +161,25 @@ class TestCliSurface(unittest.TestCase):
 
         o1 = parser.parse_args(["ops", "metrics"])
         self.assertEqual(o1.ops_cmd, "metrics")
+
+    def test_connectors_and_import_connector_flags(self) -> None:
+        parser = build_parser()
+        c1 = parser.parse_args(["connectors", "list"])
+        self.assertEqual(c1.connectors_cmd, "list")
+
+        c2 = parser.parse_args(
+            [
+                "import",
+                "connector",
+                "--connector",
+                "plaid",
+                "plaid.json",
+                "--commit",
+                "--sample",
+                "7",
+            ]
+        )
+        self.assertEqual(c2.connector, "plaid")
+        self.assertEqual(c2.path, "plaid.json")
+        self.assertTrue(c2.commit)
+        self.assertEqual(c2.sample, 7)

@@ -162,6 +162,22 @@ Example mapping file (`mapping.json`):
 }
 ```
 
+## Connectors
+
+List available connector adapters:
+
+```bash
+python3 -m ledgerflow connectors list
+```
+
+Import connector payload:
+
+```bash
+python3 -m ledgerflow import connector --connector plaid data/inbox/bank/plaid.json --sample 5
+python3 -m ledgerflow import connector --connector plaid data/inbox/bank/plaid.json --commit
+python3 -m ledgerflow import connector --connector wise data/inbox/bank/wise.json --commit
+```
+
 ## Import Receipts / Bills
 
 Import + parse a receipt (supports `*.txt` out of the box; `*.pdf`/images require optional dependencies in `requirements.txt`):
@@ -490,3 +506,14 @@ Scope behavior:
 - `/api/health` is always unauthenticated
 - `"enabled": false` disables a key
 - past `"expiresAt"` timestamps invalidate a key
+
+Feature scope behavior:
+
+- `automation`: required for `/api/automation/*`
+- `ops`: required for `/api/ops/metrics`
+- `admin`: required for `/api/backup/*` and `/api/auth/keys`
+
+Workspace-aware keys:
+
+- Add `workspaces` list in `LEDGERFLOW_API_KEYS` entries.
+- Pass `X-Workspace-Id` header when calling API.

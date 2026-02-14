@@ -75,6 +75,7 @@ def _row_to_tx(
     row_index: int,
     row: dict[str, Any],
     default_currency: str,
+    source_type: str,
     mapping: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     occurred_at = str(_mapping_value(row, mapping, "date") or "").strip()
@@ -120,7 +121,7 @@ def _row_to_tx(
         "txId": new_id("tx"),
         "source": {
             "docId": doc_id,
-            "sourceType": "bank_json",
+            "sourceType": str(source_type or "bank_json"),
             "sourceHash": source_hash,
             "lineRef": f"json:row:{row_index}",
         },
@@ -153,16 +154,44 @@ def import_bank_json_path(
     max_rows: int | None,
     mapping: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    rows = _parse_records(path)
+    return import_bank_json_records(
+        layout,
+        rows,
+        source_path=path,
+        source_type="bank_json",
+        commit=commit,
+        copy_into_sources=copy_into_sources,
+        default_currency=default_currency,
+        sample=sample,
+        max_rows=max_rows,
+        mapping=mapping,
+    )
+
+
+def import_bank_json_records(
+    layout: Layout,
+    records: list[dict[str, Any]],
+    *,
+    source_path: str | Path,
+    source_type: str,
+    commit: bool,
+    copy_into_sources: bool,
+    default_currency: str,
+    sample: int,
+    max_rows: int | None,
+    mapping: dict[str, str] | None = None,
+) -> dict[str, Any]:
     doc = register_file(
         layout.sources_dir,
         layout.sources_index_path,
-        path,
+        source_path,
         copy_into_sources=copy_into_sources,
-        source_type="bank_json",
+        source_type=str(source_type or "bank_json"),
     )
     doc_id = doc["docId"]
 
-    rows = _parse_records(path)
+    rows = [x for x in records if isinstance(x, dict)]
     if max_rows is not None and max_rows >= 0:
         rows = rows[: int(max_rows)]
 
@@ -173,7 +202,14 @@ def import_bank_json_path(
 
     for i, row in enumerate(rows, start=1):
         try:
-            tx = _row_to_tx(doc_id=doc_id, row_index=i, row=row, default_currency=default_currency, mapping=mapping)
+            tx = _row_to_tx(
+                doc_id=doc_id,
+                row_index=i,
+                row=row,
+                default_currency=default_currency,
+                source_type=str(source_type or "bank_json"),
+                mapping=mapping,
+            )
         except Exception:
             errors += 1
             continue

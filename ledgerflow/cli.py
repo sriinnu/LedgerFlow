@@ -12,6 +12,7 @@ from .extraction import extract_text, ocr_capabilities
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
 from .csv_import import CsvMapping, csv_row_to_tx, infer_mapping, read_csv_rows
+from .connectors import import_connector_path, list_connectors
 from .exporting import export_transactions_csv
 from .integration_bank_json import import_bank_json_path
 from .index_db import has_source_hash, index_stats, rebuild_index
@@ -420,6 +421,28 @@ def _cmd_import_bank_json(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_connectors_list(args: argparse.Namespace) -> int:
+    print(json.dumps({"items": list_connectors()}, ensure_ascii=False))
+    return 0
+
+
+def _cmd_import_connector(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    out = import_connector_path(
+        layout,
+        connector=args.connector,
+        path=args.path,
+        commit=args.commit,
+        copy_into_sources=args.copy_into_sources,
+        default_currency=args.currency,
+        sample=args.sample,
+        max_rows=args.max_rows,
+    )
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
 def _cmd_import_receipt(args: argparse.Namespace) -> int:
     layout = layout_for(args.data_dir)
     init_data_layout(layout, write_defaults=False)
@@ -703,6 +726,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_sreg.add_argument("--source-type", help="Optional source type label (example: receipt, bill, bank_csv).")
     p_sreg.set_defaults(func=_cmd_sources_register)
 
+    p_connectors = sub.add_parser("connectors", help="List supported connector adapters.")
+    sub_connectors = p_connectors.add_subparsers(dest="connectors_cmd", required=True)
+    p_con_list = sub_connectors.add_parser("list", help="List built-in connector adapters.")
+    p_con_list.set_defaults(func=_cmd_connectors_list)
+
     p_build = sub.add_parser("build", help="Build deterministic derived caches (daily/monthly JSON).")
     p_build.add_argument("--from-date", help="YYYY-MM-DD (inclusive)")
     p_build.add_argument("--to-date", help="YYYY-MM-DD (inclusive)")
@@ -894,6 +922,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional JSON mapping file for nested fields (keys: date, amount, currency, merchant, description, category).",
     )
     p_ibjson.set_defaults(func=_cmd_import_bank_json)
+
+    p_iconn = sub_import.add_parser("connector", help="Import connector-specific JSON payloads.")
+    p_iconn.add_argument("--connector", required=True, help="Connector id (example: plaid, wise).")
+    p_iconn.add_argument("path")
+    p_iconn.add_argument("--currency", default="USD", help="Default currency when omitted in rows.")
+    p_iconn.add_argument("--copy-into-sources", action="store_true", help="Copy file into data/sources/<docId>/")
+    p_iconn.add_argument(
+        "--commit",
+        action="store_true",
+        help="Write imported transactions to the ledger (default is dry-run).",
+    )
+    p_iconn.add_argument("--sample", type=int, default=5, help="How many txs to print in dry-run mode.")
+    p_iconn.add_argument("--max-rows", type=int, help="Limit number of connector rows processed.")
+    p_iconn.set_defaults(func=_cmd_import_connector)
 
     p_irec = sub_import.add_parser("receipt", help="Import + parse a receipt (PDF/image/text).")
     p_irec.add_argument("path")

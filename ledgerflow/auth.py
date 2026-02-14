@@ -7,6 +7,12 @@ from typing import Any
 
 
 _DEFAULT_RW_SCOPES = {"read", "write"}
+_ROLE_SCOPES: dict[str, set[str]] = {
+    "viewer": {"read"},
+    "editor": {"read", "write"},
+    "operator": {"read", "automation", "ops"},
+    "admin": {"admin"},
+}
 
 
 def _parse_scopes(value: Any) -> set[str]:
@@ -19,6 +25,22 @@ def _parse_scopes(value: Any) -> set[str]:
     if "admin" in scopes:
         scopes.update(_DEFAULT_RW_SCOPES)
     return scopes
+
+
+def _parse_workspaces(value: Any) -> list[str]:
+    if isinstance(value, str):
+        items = [x.strip() for x in value.split(",") if x.strip()]
+    elif isinstance(value, list):
+        items = [str(x).strip() for x in value if str(x).strip()]
+    else:
+        items = []
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        if item not in seen:
+            out.append(item)
+            seen.add(item)
+    return out
 
 
 def load_api_key_store_from_env() -> dict[str, dict[str, Any]]:
@@ -57,17 +79,26 @@ def load_api_key_store_from_env() -> dict[str, dict[str, Any]]:
             if not token:
                 continue
             key_id = str(item.get("id") or f"key{i}").strip()
-            scopes = _parse_scopes(item.get("scopes") or ["read", "write"])
+            role = str(item.get("role") or "").strip().lower() or None
+            if item.get("scopes") is not None:
+                scopes = _parse_scopes(item.get("scopes"))
+            elif role and role in _ROLE_SCOPES:
+                scopes = set(_ROLE_SCOPES[role])
+            else:
+                scopes = set(_DEFAULT_RW_SCOPES)
             if not scopes:
                 scopes = set(_DEFAULT_RW_SCOPES)
             enabled = bool(item.get("enabled") if "enabled" in item else True)
             expires_at = str(item.get("expiresAt") or "").strip() or None
+            workspaces = _parse_workspaces(item.get("workspaces"))
             out[token] = {
                 "id": key_id,
                 "scopes": sorted(scopes),
                 "kind": "scoped",
+                "role": role,
                 "enabled": enabled,
                 "expiresAt": expires_at,
+                "workspaces": workspaces,
             }
 
     legacy = str(os.environ.get("LEDGERFLOW_API_KEY") or "").strip()
@@ -91,16 +122,38 @@ def auth_mode_for_store(store: dict[str, dict[str, Any]]) -> str:
     return "api_key"
 
 
-def scope_for_request(method: str, path: str) -> str | None:
+def required_scopes_for_request(method: str, path: str) -> list[str] | None:
     m = str(method or "").upper()
     p = str(path or "")
     if not p.startswith("/api/"):
         return None
     if p == "/api/health" or m == "OPTIONS":
         return None
-    if m in ("GET", "HEAD"):
-        return "read"
-    return "write"
+
+    scopes: list[str] = ["read" if m in ("GET", "HEAD") else "write"]
+
+    if p.startswith("/api/automation/"):
+        scopes.append("automation")
+    if p == "/api/ops/metrics":
+        scopes.append("ops")
+    if p == "/api/auth/keys" or p.startswith("/api/backup/"):
+        scopes.append("admin")
+
+    # Preserve order while deduplicating.
+    out: list[str] = []
+    seen: set[str] = set()
+    for s in scopes:
+        if s not in seen:
+            out.append(s)
+            seen.add(s)
+    return out
+
+
+def scope_for_request(method: str, path: str) -> str | None:
+    scopes = required_scopes_for_request(method, path)
+    if not scopes:
+        return None
+    return scopes[0]
 
 
 def key_has_scope(meta: dict[str, Any], required: str) -> bool:
@@ -144,3 +197,10 @@ def scope_denial_reason(meta: dict[str, Any], required: str) -> str | None:
     if key_has_scope(meta, required):
         return None
     return "insufficient_scope"
+
+
+def key_allows_workspace(meta: dict[str, Any], workspace_id: str) -> bool:
+    allowed = [str(x) for x in (meta.get("workspaces") or []) if str(x).strip()]
+    if not allowed:
+        return True
+    return str(workspace_id or "").strip() in set(allowed)

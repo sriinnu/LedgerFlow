@@ -316,6 +316,7 @@ class TestApi(unittest.TestCase):
                     {"id": "disabled", "key": "off-key", "scopes": ["write"], "enabled": False},
                     {"id": "expired", "key": "old-key", "scopes": ["write"], "expiresAt": "2020-01-01T00:00:00Z"},
                     {"id": "active", "key": "good-key", "scopes": ["write"], "expiresAt": "2099-01-01T00:00:00Z"},
+                    {"id": "admin", "key": "admin-key", "role": "admin"},
                 ]
             )
             with patch.dict("os.environ", {"LEDGERFLOW_API_KEYS": scoped, "LEDGERFLOW_API_KEY": ""}, clear=False):
@@ -343,9 +344,57 @@ class TestApi(unittest.TestCase):
             )
             self.assertEqual(r3.status_code, 200)
 
-            keys = client.get("/api/auth/keys", headers={"x-api-key": "good-key"})
+            keys = client.get("/api/auth/keys", headers={"x-api-key": "admin-key"})
             self.assertEqual(keys.status_code, 200)
             self.assertGreaterEqual(keys.json().get("count") or 0, 3)
+
+    def test_rbac_feature_scopes_and_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data_dir = Path(td) / "data"
+            scoped = json.dumps(
+                [
+                    {"id": "writer", "key": "writer-key", "scopes": ["write"]},
+                    {"id": "ops", "key": "ops-key", "scopes": ["read", "ops"]},
+                    {"id": "auto", "key": "auto-key", "scopes": ["read", "write", "automation"]},
+                    {"id": "admin", "key": "admin-key", "role": "admin"},
+                    {"id": "team-a", "key": "team-a-key", "scopes": ["read"], "workspaces": ["team-a"]},
+                ]
+            )
+            with patch.dict("os.environ", {"LEDGERFLOW_API_KEYS": scoped, "LEDGERFLOW_API_KEY": ""}, clear=False):
+                app = create_app(str(data_dir))
+            client = TestClient(app)
+
+            # writer lacks automation scope
+            d1 = client.post("/api/automation/tasks", headers={"x-api-key": "writer-key"}, json={"taskType": "build", "payload": {}})
+            self.assertEqual(d1.status_code, 403)
+
+            # auto key has write + automation
+            ok1 = client.post("/api/automation/tasks", headers={"x-api-key": "auto-key"}, json={"taskType": "build", "payload": {}})
+            self.assertEqual(ok1.status_code, 200)
+
+            # backup requires admin
+            d2 = client.post("/api/backup/create", headers={"x-api-key": "writer-key"}, json={})
+            self.assertEqual(d2.status_code, 403)
+            ok2 = client.post("/api/backup/create", headers={"x-api-key": "admin-key"}, json={"includeInbox": False})
+            self.assertEqual(ok2.status_code, 200)
+
+            # ops endpoint requires ops scope
+            d3 = client.get("/api/ops/metrics", headers={"x-api-key": "writer-key"})
+            self.assertEqual(d3.status_code, 403)
+            ok3 = client.get("/api/ops/metrics", headers={"x-api-key": "ops-key"})
+            self.assertEqual(ok3.status_code, 200)
+
+            # workspace restrictions
+            d4 = client.get(
+                "/api/transactions?limit=5",
+                headers={"x-api-key": "team-a-key", "x-workspace-id": "team-b"},
+            )
+            self.assertEqual(d4.status_code, 403)
+            ok4 = client.get(
+                "/api/transactions?limit=5",
+                headers={"x-api-key": "team-a-key", "x-workspace-id": "team-a"},
+            )
+            self.assertEqual(ok4.status_code, 200)
 
     def test_automation_and_bank_json_api_endpoints(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -451,6 +500,39 @@ class TestApi(unittest.TestCase):
             dead = client.get("/api/automation/dead-letters?limit=20")
             self.assertEqual(dead.status_code, 200)
             self.assertIn("items", dead.json())
+
+            cons = client.get("/api/connectors")
+            self.assertEqual(cons.status_code, 200)
+            self.assertTrue(any((x.get("id") == "plaid") for x in (cons.json().get("items") or [])))
+
+            plaid = Path(td) / "plaid.json"
+            plaid.write_text(
+                json.dumps(
+                    {
+                        "transactions": [
+                            {
+                                "date": "2026-02-13",
+                                "name": "Coffee Shop",
+                                "merchant_name": "Coffee Shop",
+                                "amount": 4.75,
+                                "iso_currency_code": "USD",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            imp_conn = client.post(
+                "/api/import/connector-path",
+                json={
+                    "connector": "plaid",
+                    "path": str(plaid),
+                    "commit": True,
+                    "currency": "USD",
+                },
+            )
+            self.assertEqual(imp_conn.status_code, 200)
+            self.assertEqual(imp_conn.json().get("imported"), 1)
 
             backup = client.post("/api/backup/create", json={"includeInbox": False})
             self.assertEqual(backup.status_code, 200)

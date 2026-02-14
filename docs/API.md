@@ -53,6 +53,18 @@ Scope rules:
 - keys with `"enabled": false` are rejected.
 - keys with past `"expiresAt"` are rejected.
 
+Feature-level scopes:
+
+- `/api/automation/*` additionally requires `automation`.
+- `/api/ops/metrics` additionally requires `ops`.
+- `/api/backup/*` and `/api/auth/keys` additionally require `admin`.
+
+Workspace restrictions:
+
+- Keys may include `"workspaces": ["team-a", "team-b"]`.
+- Requests should send `X-Workspace-Id: <workspace>`.
+- If key workspaces are configured, requests outside allowed workspaces are denied.
+
 ## Health
 
 `GET /api/health`
@@ -72,6 +84,10 @@ Response:
 `GET /api/auth/context` returns current key auth context for the presented key.
 
 `GET /api/auth/keys` lists configured key metadata (ids/scopes/status, no raw tokens).
+
+Connectors catalog:
+
+- `GET /api/connectors`
 
 ## OCR
 
@@ -294,6 +310,24 @@ Body:
     "description": "notes.text",
     "category": "labels.category"
   }
+}
+```
+
+## Import Connector Payload From Path
+
+`POST /api/import/connector-path`
+
+Body:
+
+```json
+{
+  "connector": "plaid",
+  "path": "/absolute/or/relative/path/to/payload.json",
+  "commit": false,
+  "copyIntoSources": false,
+  "currency": "USD",
+  "sample": 5,
+  "maxRows": 200
 }
 ```
 

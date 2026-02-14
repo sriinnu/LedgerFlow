@@ -12,12 +12,19 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .ai_analysis import analyze_spending
 from .alerts import run_alerts
-from .auth import auth_mode_for_store, key_has_scope, load_api_key_store_from_env, scope_denial_reason, scope_for_request
+from .auth import (
+    auth_mode_for_store,
+    key_allows_workspace,
+    load_api_key_store_from_env,
+    required_scopes_for_request,
+    scope_denial_reason,
+)
 from .automation import dispatch_due_and_work, enqueue_due_jobs, enqueue_task, list_dead_letters, list_tasks, queue_stats, read_jobs, run_next_task, write_jobs
 from .backup import create_backup, restore_backup
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
 from .charts import build_category_breakdown_month, build_series, build_merchant_top_month
+from .connectors import import_connector_path, list_connectors
 from .csv_import import CsvMapping, csv_row_to_tx, infer_mapping, read_csv_rows
 from .dedup import mark_manual_duplicates_against_bank
 from .documents import import_and_parse_bill, import_and_parse_receipt
@@ -205,11 +212,12 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         method = request.method.upper()
         is_api = path.startswith("/api/")
         is_local = _is_local_client(request)
-        required_scope = scope_for_request(method, path) if is_api else None
-        requires_auth = bool(key_store) and (required_scope is not None)
+        required_scopes = required_scopes_for_request(method, path) if is_api else None
+        requires_auth = bool(key_store) and (required_scopes is not None)
         denied = False
         deny_reason = None
         auth_key_id = None
+        workspace_id = (request.headers.get("x-workspace-id") or "default").strip() or "default"
 
         if requires_auth:
             presented = _api_key_from_request(request)
@@ -219,28 +227,43 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 deny_reason = "missing_or_invalid_api_key"
                 response = JSONResponse(status_code=401, content={"detail": "API key required"})
             else:
-                deny_reason2 = scope_denial_reason(key_meta, str(required_scope))
-                if deny_reason2 == "api_key_disabled":
-                    denied = True
-                    deny_reason = deny_reason2
-                    response = JSONResponse(status_code=401, content={"detail": "API key is disabled"})
-                elif deny_reason2 == "api_key_expired":
-                    denied = True
-                    deny_reason = deny_reason2
-                    response = JSONResponse(status_code=401, content={"detail": "API key has expired"})
-                elif not key_has_scope(key_meta, str(required_scope)):
+                missing_scope = None
+                for req_scope in (required_scopes or []):
+                    deny_reason2 = scope_denial_reason(key_meta, str(req_scope))
+                    if deny_reason2 == "api_key_disabled":
+                        denied = True
+                        deny_reason = deny_reason2
+                        response = JSONResponse(status_code=401, content={"detail": "API key is disabled"})
+                        break
+                    if deny_reason2 == "api_key_expired":
+                        denied = True
+                        deny_reason = deny_reason2
+                        response = JSONResponse(status_code=401, content={"detail": "API key has expired"})
+                        break
+                    if deny_reason2 == "insufficient_scope":
+                        missing_scope = str(req_scope)
+                        break
+                if not denied and missing_scope:
                     denied = True
                     deny_reason = "insufficient_scope"
-                    response = JSONResponse(status_code=403, content={"detail": f"Insufficient scope. Required: {required_scope}"})
+                    response = JSONResponse(status_code=403, content={"detail": f"Insufficient scope. Required: {missing_scope}"})
+                elif not denied and not key_allows_workspace(key_meta, workspace_id):
+                    denied = True
+                    deny_reason = "workspace_not_allowed"
+                    response = JSONResponse(
+                        status_code=403,
+                        content={"detail": f"Workspace not allowed for this key: {workspace_id}"},
+                    )
                 else:
-                    auth_key_id = str(key_meta.get("id") or "")
-                    response = await call_next(request)
-        elif is_api and (required_scope is not None) and not is_local:
+                    if not denied:
+                        auth_key_id = str(key_meta.get("id") or "")
+                        response = await call_next(request)
+        elif is_api and (required_scopes is not None) and not is_local:
             denied = True
             deny_reason = "non_local_client_without_api_key"
             response = JSONResponse(
                 status_code=401,
-                content={"detail": "Non-local API access requires LEDGERFLOW_API_KEY and request auth header."},
+                content={"detail": "Non-local API access requires API key configuration and request auth header."},
             )
         else:
             response = await call_next(request)
@@ -255,8 +278,9 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 "client": (request.client.host if request.client else None),
                 "userAgent": request.headers.get("user-agent"),
                 "authRequired": requires_auth,
-                "authScopeRequired": required_scope,
+                "authScopesRequired": list(required_scopes or []),
                 "authKeyId": auth_key_id,
+                "workspaceId": workspace_id,
                 "authMode": str(getattr(app.state, "auth_mode", "unknown")),
                 "authDenied": denied,
                 "authDenyReason": deny_reason,
@@ -294,15 +318,19 @@ def create_app(data_dir: str | None = None) -> FastAPI:
             store = {}
         presented = _api_key_from_request(request)
         meta = store.get(presented) if presented else None
+        workspace_id = (request.headers.get("x-workspace-id") or "default").strip() or "default"
         return {
             "authEnabled": bool(getattr(request.app.state, "api_key_required", False)),
             "authMode": str(getattr(request.app.state, "auth_mode", "unknown")),
             "keyCount": len(store),
             "authenticated": bool(meta),
             "keyId": str(meta.get("id")) if isinstance(meta, dict) and meta.get("id") else None,
+            "role": str(meta.get("role")) if isinstance(meta, dict) and meta.get("role") else None,
             "scopes": list(meta.get("scopes") or []) if isinstance(meta, dict) else [],
             "enabled": bool(meta.get("enabled", True)) if isinstance(meta, dict) else None,
             "expiresAt": (str(meta.get("expiresAt")) if isinstance(meta, dict) and meta.get("expiresAt") else None),
+            "workspaceId": workspace_id,
+            "allowedWorkspaces": list(meta.get("workspaces") or []) if isinstance(meta, dict) else [],
         }
 
     @app.get("/api/auth/keys")
@@ -318,9 +346,11 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 {
                     "id": str(meta.get("id") or ""),
                     "kind": str(meta.get("kind") or ""),
+                    "role": str(meta.get("role")) if meta.get("role") else None,
                     "scopes": list(meta.get("scopes") or []),
                     "enabled": bool(meta.get("enabled", True)),
                     "expiresAt": str(meta.get("expiresAt") or "") or None,
+                    "workspaces": list(meta.get("workspaces") or []),
                 }
             )
         return {"items": items, "count": len(items)}
@@ -407,6 +437,10 @@ def create_app(data_dir: str | None = None) -> FastAPI:
         if isinstance(docs, list) and limit is not None and limit >= 0:
             docs = docs[-limit:]
         return {"index": {"version": idx.get("version", 1), "docs": docs}}
+
+    @app.get("/api/connectors")
+    def api_connectors() -> dict[str, Any]:
+        return {"items": list_connectors()}
 
     @app.get("/api/review/queue")
     def api_review_queue(request: Request, date: str | None = None, limit: int = 200) -> dict[str, Any]:
@@ -983,6 +1017,30 @@ def create_app(data_dir: str | None = None) -> FastAPI:
                 sample=int(payload.get("sample") or 5),
                 max_rows=(int(payload["maxRows"]) if payload.get("maxRows") is not None else None),
                 mapping=({str(k): str(v) for k, v in mapping.items() if v is not None} if isinstance(mapping, dict) else None),
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return JSONResponse(out)
+
+    @app.post("/api/import/connector-path")
+    def api_import_connector_path(request: Request, payload: dict[str, Any] = Body(...)) -> JSONResponse:
+        layout = _get_layout(request)
+        connector = str(payload.get("connector") or "").strip()
+        path = str(payload.get("path") or "").strip()
+        if not connector:
+            raise HTTPException(status_code=400, detail="connector is required")
+        if not path:
+            raise HTTPException(status_code=400, detail="path is required")
+        try:
+            out = import_connector_path(
+                layout,
+                connector=connector,
+                path=path,
+                commit=bool(payload.get("commit") or False),
+                copy_into_sources=bool(payload.get("copyIntoSources") or False),
+                default_currency=str(payload.get("currency") or "USD"),
+                sample=int(payload.get("sample") or 5),
+                max_rows=(int(payload["maxRows"]) if payload.get("maxRows") is not None else None),
             )
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e)) from e

@@ -17,6 +17,7 @@ LedgerFlow is a local-first bills and receipts money tracker with:
 - Inputs:
   - bank CSV exports
   - bank/integration JSON exports
+  - connector JSON payloads (`plaid`, `wise`)
   - receipt/bill files (`txt`, `pdf`, image formats)
   - manual entries
 - Outputs:
@@ -52,6 +53,10 @@ python3 -m ledgerflow import csv data/inbox/bank/statement.csv --commit
 # Import bank/integration JSON (dry-run, then commit)
 python3 -m ledgerflow import bank-json data/inbox/bank/export.json --sample 5
 python3 -m ledgerflow import bank-json data/inbox/bank/export.json --commit
+
+# Import connector payload (plaid/wise adapters)
+python3 -m ledgerflow connectors list
+python3 -m ledgerflow import connector --connector plaid data/inbox/bank/plaid.json --commit
 
 # Add a manual transaction
 python3 -m ledgerflow manual add \
@@ -217,6 +222,13 @@ Key behavior:
 - `admin` scope includes `read` + `write`
 - keys with `"enabled": false` are rejected
 - keys with past `"expiresAt"` are rejected
+- route-level scopes are supported:
+  - `/api/automation/*` requires `automation`
+  - `/api/ops/metrics` requires `ops`
+  - `/api/backup/*` and `/api/auth/keys` require `admin`
+- optional key workspaces:
+  - add `"workspaces": ["team-a","team-b"]` in key config
+  - send `X-Workspace-Id: team-a` on API requests
 
 Auth headers:
 
