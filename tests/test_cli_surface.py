@@ -18,6 +18,8 @@ class TestCliSurface(unittest.TestCase):
         self.assertIn("review", choices)
         self.assertIn("ai", choices)
         self.assertIn("automation", choices)
+        self.assertIn("backup", choices)
+        self.assertIn("ops", choices)
 
     def test_ocr_extract_flags(self) -> None:
         parser = build_parser()
@@ -142,3 +144,19 @@ class TestCliSurface(unittest.TestCase):
         ns2 = parser.parse_args(["automation", "dead-letters", "--limit", "15"])
         self.assertEqual(ns2.automation_cmd, "dead-letters")
         self.assertEqual(ns2.limit, 15)
+
+    def test_backup_and_ops_flags(self) -> None:
+        parser = build_parser()
+        b1 = parser.parse_args(["backup", "create", "--out", "backup.tar.gz", "--no-inbox"])
+        self.assertEqual(b1.backup_cmd, "create")
+        self.assertEqual(b1.out, "backup.tar.gz")
+        self.assertTrue(b1.no_inbox)
+
+        b2 = parser.parse_args(["backup", "restore", "--archive", "backup.tar.gz", "--target-dir", "restore", "--force"])
+        self.assertEqual(b2.backup_cmd, "restore")
+        self.assertEqual(b2.archive, "backup.tar.gz")
+        self.assertEqual(b2.target_dir, "restore")
+        self.assertTrue(b2.force)
+
+        o1 = parser.parse_args(["ops", "metrics"])
+        self.assertEqual(o1.ops_cmd, "metrics")

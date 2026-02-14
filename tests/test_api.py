@@ -451,3 +451,23 @@ class TestApi(unittest.TestCase):
             dead = client.get("/api/automation/dead-letters?limit=20")
             self.assertEqual(dead.status_code, 200)
             self.assertIn("items", dead.json())
+
+            backup = client.post("/api/backup/create", json={"includeInbox": False})
+            self.assertEqual(backup.status_code, 200)
+            archive_path = backup.json().get("archivePath")
+            self.assertTrue(isinstance(archive_path, str) and len(archive_path) > 0)
+
+            restore_target = str(Path(td) / "restored_api")
+            restored = client.post(
+                "/api/backup/restore",
+                json={"archivePath": archive_path, "targetDir": restore_target, "force": True},
+            )
+            self.assertEqual(restored.status_code, 200)
+            self.assertTrue((Path(restore_target) / "ledger" / "transactions.jsonl").exists())
+
+            metrics = client.get("/api/ops/metrics")
+            self.assertEqual(metrics.status_code, 200)
+            mj = metrics.json()
+            self.assertIn("index", mj)
+            self.assertIn("queue", mj)
+            self.assertIn("counts", mj)

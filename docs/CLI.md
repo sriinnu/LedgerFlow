@@ -147,6 +147,8 @@ Input shape:
 - JSON list of transaction objects, or
 - object containing `transactions: [...]`
 
+When the payload uses nested fields, pass `--mapping-file` with dot-paths (for example `meta.date`, `money.value`).
+
 Example mapping file (`mapping.json`):
 
 ```json
@@ -415,6 +417,28 @@ Queue health and failure inspection:
 ```bash
 python3 -m ledgerflow automation stats
 python3 -m ledgerflow automation dead-letters --limit 20
+```
+
+## Backup / Restore
+
+Create backup archive from current `--data-dir`:
+
+```bash
+python3 -m ledgerflow backup create
+python3 -m ledgerflow backup create --out /tmp/ledgerflow.tar.gz --no-inbox
+```
+
+Restore backup archive into a target directory:
+
+```bash
+python3 -m ledgerflow backup restore --archive /tmp/ledgerflow.tar.gz --target-dir /tmp/ledgerflow-restore
+python3 -m ledgerflow backup restore --archive /tmp/ledgerflow.tar.gz --target-dir /tmp/ledgerflow-restore --force
+```
+
+## Ops Metrics
+
+```bash
+python3 -m ledgerflow ops metrics
 ```
 
 Manage job definitions:

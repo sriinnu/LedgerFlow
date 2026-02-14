@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .ai_analysis import analyze_spending
 from .automation import dispatch_due_and_work, enqueue_due_jobs, enqueue_task, list_dead_letters, list_tasks, queue_stats, read_jobs, run_next_task, run_worker, write_jobs
+from .backup import create_backup, restore_backup
 from .extraction import extract_text, ocr_capabilities
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
@@ -26,6 +27,7 @@ from .charts import write_category_breakdown_month, write_merchant_top_month, wr
 from .documents import import_and_parse_bill, import_and_parse_receipt
 from .dedup import mark_manual_duplicates_against_bank
 from .linking import link_bills_to_bank, link_receipts_to_bank
+from .ops import collect_metrics
 from .timeutil import parse_ymd, today_ymd
 
 
@@ -616,6 +618,36 @@ def _cmd_automation_dispatch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_backup_create(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    out = create_backup(
+        layout,
+        out_path=args.out,
+        include_inbox=not args.no_inbox,
+    )
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
+def _cmd_backup_restore(args: argparse.Namespace) -> int:
+    out = restore_backup(
+        args.archive,
+        target_dir=args.target_dir,
+        force=bool(args.force),
+    )
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
+def _cmd_ops_metrics(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    out = collect_metrics(layout)
+    print(json.dumps(out, ensure_ascii=False))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ledgerflow", description="LedgerFlow local-first ledger tools.")
     p.add_argument("--data-dir", default="data", help="Data directory (default: ./data)")
@@ -902,6 +934,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--port", type=int, default=8787)
     p_serve.add_argument("--reload", action="store_true", help="Enable auto-reload (dev only).")
     p_serve.set_defaults(func=_cmd_serve)
+
+    p_backup = sub.add_parser("backup", help="Create or restore full data backups.")
+    sub_backup = p_backup.add_subparsers(dest="backup_cmd", required=True)
+
+    p_bcreate = sub_backup.add_parser("create", help="Create a tar.gz backup from --data-dir.")
+    p_bcreate.add_argument("--out", help="Output archive path (default: ../ledgerflow_backups/...).")
+    p_bcreate.add_argument("--no-inbox", action="store_true", help="Exclude data/inbox from the backup archive.")
+    p_bcreate.set_defaults(func=_cmd_backup_create)
+
+    p_brestore = sub_backup.add_parser("restore", help="Restore a backup archive into a target directory.")
+    p_brestore.add_argument("--archive", required=True, help="Path to backup tar.gz.")
+    p_brestore.add_argument("--target-dir", required=True, help="Directory where backup will be extracted.")
+    p_brestore.add_argument("--force", action="store_true", help="Overwrite non-empty target directory.")
+    p_brestore.set_defaults(func=_cmd_backup_restore)
+
+    p_ops = sub.add_parser("ops", help="Operational diagnostics.")
+    sub_ops = p_ops.add_subparsers(dest="ops_cmd", required=True)
+
+    p_om = sub_ops.add_parser("metrics", help="Show operational metrics snapshot.")
+    p_om.set_defaults(func=_cmd_ops_metrics)
 
     p_auto = sub.add_parser("automation", help="Automation scheduler + queue operations.")
     sub_auto = p_auto.add_subparsers(dest="automation_cmd", required=True)

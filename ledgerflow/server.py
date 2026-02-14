@@ -14,6 +14,7 @@ from .ai_analysis import analyze_spending
 from .alerts import run_alerts
 from .auth import auth_mode_for_store, key_has_scope, load_api_key_store_from_env, scope_denial_reason, scope_for_request
 from .automation import dispatch_due_and_work, enqueue_due_jobs, enqueue_task, list_dead_letters, list_tasks, queue_stats, read_jobs, run_next_task, write_jobs
+from .backup import create_backup, restore_backup
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
 from .charts import build_category_breakdown_month, build_series, build_merchant_top_month
@@ -29,6 +30,7 @@ from .layout import Layout, layout_for
 from .linking import link_bills_to_bank, link_receipts_to_bank
 from .manual import ManualEntry, correction_event, manual_entry_to_tx, parse_amount, tombstone_event
 from .migrations import APP_SCHEMA_VERSION, migrate_to_latest, status as migration_status
+from .ops import collect_metrics
 from .reporting import daily_report_data, render_daily_report_md, monthly_report_data, render_monthly_report_md, write_daily_report, write_monthly_report
 from .review import resolve_review_transaction, review_queue
 from .sources import register_file
@@ -590,6 +592,38 @@ def create_app(data_dir: str | None = None) -> FastAPI:
             return write_jobs(layout, payload)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
+
+    @app.post("/api/backup/create")
+    def api_backup_create(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        layout = _get_layout(request)
+        return create_backup(
+            layout,
+            out_path=(str(payload["outPath"]) if payload.get("outPath") else None),
+            include_inbox=bool(payload.get("includeInbox") if "includeInbox" in payload else True),
+        )
+
+    @app.post("/api/backup/restore")
+    def api_backup_restore(request: Request, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        _ = _get_layout(request)
+        archive_path = str(payload.get("archivePath") or "").strip()
+        target_dir = str(payload.get("targetDir") or "").strip()
+        if not archive_path:
+            raise HTTPException(status_code=400, detail="archivePath is required")
+        if not target_dir:
+            raise HTTPException(status_code=400, detail="targetDir is required")
+        try:
+            return restore_backup(
+                archive_path,
+                target_dir=target_dir,
+                force=bool(payload.get("force") or False),
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    @app.get("/api/ops/metrics")
+    def api_ops_metrics(request: Request) -> dict[str, Any]:
+        layout = _get_layout(request)
+        return collect_metrics(layout)
 
     @app.post("/api/alerts/run")
     def api_alerts_run(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:

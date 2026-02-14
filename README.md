@@ -149,6 +149,21 @@ Example `mapping.json`:
 }
 ```
 
+## Backup / Restore + Ops
+
+```bash
+# Create backup archive from --data-dir
+python3 -m ledgerflow backup create
+python3 -m ledgerflow backup create --out /tmp/ledgerflow.tar.gz --no-inbox
+
+# Restore into a target directory
+python3 -m ledgerflow backup restore --archive /tmp/ledgerflow.tar.gz --target-dir /tmp/ledgerflow-restored
+python3 -m ledgerflow backup restore --archive /tmp/ledgerflow.tar.gz --target-dir /tmp/ledgerflow-restored --force
+
+# Ops metrics snapshot
+python3 -m ledgerflow ops metrics
+```
+
 ## OCR Through CLI
 
 ```bash

@@ -457,6 +457,41 @@ Jobs config:
 - `GET /api/automation/jobs`
 - `POST /api/automation/jobs` (replace jobs document)
 
+## Backup / Restore
+
+Create a backup archive from current server data dir:
+
+- `POST /api/backup/create`
+- body (all optional):
+
+```json
+{
+  "outPath": "/tmp/ledgerflow-backup.tar.gz",
+  "includeInbox": true
+}
+```
+
+Restore a backup archive into target directory:
+
+- `POST /api/backup/restore`
+- body:
+
+```json
+{
+  "archivePath": "/tmp/ledgerflow-backup.tar.gz",
+  "targetDir": "/tmp/ledgerflow-restored",
+  "force": false
+}
+```
+
+## Ops Metrics
+
+- `GET /api/ops/metrics`
+- response includes:
+  - `index` (sqlite index stats)
+  - `queue` (automation queue stats)
+  - `counts` (`sources`, `alertsEvents`, `auditEvents`, `transactionsJsonl`, `correctionsJsonl`)
+
 ## Alerts
 
 - `POST /api/alerts/run` body: `{ "at": "2026-02-10", "commit": true }`
