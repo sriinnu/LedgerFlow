@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .ai_analysis import analyze_spending
+from .alert_delivery import deliver_alert_events, list_outbox_entries
 from .alerts import run_alerts
 from .auth import (
     auth_mode_for_store,
@@ -671,6 +672,27 @@ def create_app(data_dir: str | None = None) -> FastAPI:
     def api_alerts_events(request: Request, limit: int = 50) -> dict[str, Any]:
         layout = _get_layout(request)
         items = read_jsonl(layout.alerts_dir / "events.jsonl", limit=limit)
+        return {"items": items}
+
+    @app.post("/api/alerts/deliver")
+    def api_alerts_deliver(request: Request, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        layout = _get_layout(request)
+        raw_channels = payload.get("channels")
+        channels: list[str] | None = None
+        if isinstance(raw_channels, list):
+            channels = [str(x).strip() for x in raw_channels if str(x).strip()]
+        res = deliver_alert_events(
+            layout,
+            limit=int(payload.get("limit") or 100),
+            channel_ids=channels if channels else None,
+            dry_run=bool(payload.get("dryRun") if "dryRun" in payload else False),
+        )
+        return res
+
+    @app.get("/api/alerts/outbox")
+    def api_alerts_outbox(request: Request, limit: int = 50) -> dict[str, Any]:
+        layout = _get_layout(request)
+        items = list_outbox_entries(layout, limit=limit)
         return {"items": items}
 
     @app.get("/api/audit/events")

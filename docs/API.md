@@ -56,6 +56,7 @@ Scope rules:
 Feature-level scopes:
 
 - `/api/automation/*` additionally requires `automation`.
+- `/api/alerts/deliver` additionally requires `automation`.
 - `/api/ops/metrics` additionally requires `ops`.
 - `/api/backup/*` and `/api/auth/keys` additionally require `admin`.
 
@@ -72,7 +73,7 @@ Workspace restrictions:
 Response:
 
 ```json
-{ "status": "ok", "version": "0.2.0", "dataDir": "data", "authEnabled": false, "authMode": "local_only_no_key" }
+{ "status": "ok", "version": "0.2.1", "dataDir": "data", "authEnabled": false, "authMode": "local_only_no_key" }
 ```
 
 `authMode` values:
@@ -524,12 +525,19 @@ Restore a backup archive into target directory:
 - response includes:
   - `index` (sqlite index stats)
   - `queue` (automation queue stats)
-  - `counts` (`sources`, `alertsEvents`, `auditEvents`, `transactionsJsonl`, `correctionsJsonl`)
+  - `counts` (`sources`, `alertsEvents`, `alertsOutbox`, `auditEvents`, `transactionsJsonl`, `correctionsJsonl`)
 
 ## Alerts
 
 - `POST /api/alerts/run` body: `{ "at": "2026-02-10", "commit": true }`
 - `GET /api/alerts/events?limit=50`
+- `POST /api/alerts/deliver` body:
+
+```json
+{ "limit": 100, "channels": ["local_outbox"], "dryRun": false }
+```
+
+- `GET /api/alerts/outbox?limit=50`
 
 ## Audit
 

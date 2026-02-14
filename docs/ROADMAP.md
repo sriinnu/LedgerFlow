@@ -32,6 +32,11 @@ This file maps implementation status to the milestones defined in `SKILL.md`.
   - `recurring_changed`
   - `cash_heavy_day`
   - `unclassified_spend`
+- Alert delivery pipeline:
+  - `alerts deliver` + `alerts outbox` CLI
+  - `/api/alerts/deliver` + `/api/alerts/outbox`
+  - channel config/state files (`delivery_rules.json`, `delivery_state.json`)
+  - automation task support (`alerts.deliver`)
 - Web chart rendering for:
   - spend time series
   - category breakdown
@@ -51,4 +56,4 @@ This file maps implementation status to the milestones defined in `SKILL.md`.
 
 - More document template packs for region-specific invoice/receipt layouts.
 - Incremental chart rendering for very large datasets.
-- Fine-grained RBAC and user identity model for multi-user deployments.
+- Full user identity model for multi-user deployments.

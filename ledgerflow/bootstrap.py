@@ -100,6 +100,30 @@ def init_data_layout(layout: Layout, *, write_defaults: bool = True) -> None:
             },
         )
 
+    if not layout.alert_delivery_rules_path.exists():
+        write_json(
+            layout.alert_delivery_rules_path,
+            {
+                "version": 1,
+                "channels": [
+                    {
+                        "id": "local_outbox",
+                        "type": "outbox",
+                        "enabled": True,
+                    }
+                ],
+            },
+        )
+
+    if not layout.alert_delivery_state_path.exists():
+        write_json(
+            layout.alert_delivery_state_path,
+            {
+                "version": 1,
+                "channels": {},
+            },
+        )
+
     if not layout.automation_jobs_path.exists():
         write_json(
             layout.automation_jobs_path,

@@ -157,6 +157,29 @@ class TestApi(unittest.TestCase):
             ar = client.post("/api/alerts/run", json={"at": "2026-02-10", "commit": False})
             self.assertEqual(ar.status_code, 200)
 
+            event = {
+                "eventId": "alrt_test_1",
+                "ruleId": "test_rule",
+                "type": "category_budget",
+                "period": "day",
+                "periodKey": "2026-02-10",
+                "scopeDate": "2026-02-10",
+                "at": "2026-02-10T00:00:00Z",
+                "data": {"limit": "10", "value": "20"},
+                "message": "test",
+            }
+            events_path = data_dir / "alerts" / "events.jsonl"
+            events_path.parent.mkdir(parents=True, exist_ok=True)
+            events_path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+
+            ad = client.post("/api/alerts/deliver", json={"limit": 10})
+            self.assertEqual(ad.status_code, 200)
+            self.assertEqual(ad.json().get("delivered"), 1)
+
+            ao = client.get("/api/alerts/outbox?limit=10")
+            self.assertEqual(ao.status_code, 200)
+            self.assertEqual(len(ao.json().get("items") or []), 1)
+
             ai = client.post("/api/ai/analyze", json={"month": "2026-02", "provider": "heuristic", "lookbackMonths": 3})
             self.assertEqual(ai.status_code, 200)
             aj = ai.json()
@@ -384,17 +407,23 @@ class TestApi(unittest.TestCase):
             ok3 = client.get("/api/ops/metrics", headers={"x-api-key": "ops-key"})
             self.assertEqual(ok3.status_code, 200)
 
+            # alert delivery requires automation scope
+            d4 = client.post("/api/alerts/deliver", headers={"x-api-key": "writer-key"}, json={})
+            self.assertEqual(d4.status_code, 403)
+            ok4 = client.post("/api/alerts/deliver", headers={"x-api-key": "auto-key"}, json={"dryRun": True})
+            self.assertEqual(ok4.status_code, 200)
+
             # workspace restrictions
-            d4 = client.get(
+            d5 = client.get(
                 "/api/transactions?limit=5",
                 headers={"x-api-key": "team-a-key", "x-workspace-id": "team-b"},
             )
-            self.assertEqual(d4.status_code, 403)
-            ok4 = client.get(
+            self.assertEqual(d5.status_code, 403)
+            ok5 = client.get(
                 "/api/transactions?limit=5",
                 headers={"x-api-key": "team-a-key", "x-workspace-id": "team-a"},
             )
-            self.assertEqual(ok4.status_code, 200)
+            self.assertEqual(ok5.status_code, 200)
 
     def test_automation_and_bank_json_api_endpoints(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -21,6 +21,9 @@ data/
     alert_rules.json
     state.json
     events.jsonl
+    delivery_rules.json
+    delivery_state.json
+    outbox.jsonl
   exports/
   index/
     ledgerflow.db

@@ -40,6 +40,7 @@ def collect_metrics(layout: Layout) -> dict[str, Any]:
         "counts": {
             "sources": _sources_count(layout),
             "alertsEvents": _count_jsonl(layout.alerts_dir / "events.jsonl"),
+            "alertsOutbox": _count_jsonl(layout.alert_outbox_path),
             "auditEvents": _count_jsonl(layout.audit_log_path),
             "transactionsJsonl": _count_jsonl(layout.transactions_path),
             "correctionsJsonl": _count_jsonl(layout.corrections_path),

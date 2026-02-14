@@ -143,6 +143,43 @@ State (`data/alerts/state.json`):
 }
 ```
 
+Delivery rules (`data/alerts/delivery_rules.json`):
+
+```json
+{
+  "version": 1,
+  "channels": [
+    { "id": "local_outbox", "type": "outbox", "enabled": true },
+    { "id": "ops_webhook", "type": "webhook", "enabled": false, "url": "https://example.com/hooks/ledgerflow", "headers": { "Authorization": "Bearer ..." } }
+  ]
+}
+```
+
+Delivery state (`data/alerts/delivery_state.json`):
+
+```json
+{
+  "version": 1,
+  "lastRun": "2026-02-10T21:25:00Z",
+  "channels": {
+    "local_outbox": { "cursor": 42, "lastDeliveredEventId": "alrt_...", "lastDeliveredAt": "2026-02-10T21:25:00Z", "lastError": null }
+  }
+}
+```
+
+Outbox (`data/alerts/outbox.jsonl`):
+
+```json
+{
+  "deliveryId": "adel_...",
+  "channelId": "local_outbox",
+  "channelType": "outbox",
+  "eventId": "alrt_...",
+  "deliveredAt": "2026-02-10T21:25:01Z",
+  "event": { "eventId": "alrt_...", "ruleId": "groceries_monthly" }
+}
+```
+
 ## Charts
 
 Series (`data/charts/series.<from>_<to>.json`):

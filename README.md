@@ -24,7 +24,7 @@ LedgerFlow is a local-first bills and receipts money tracker with:
   - `data/ledger/transactions.jsonl` and `data/ledger/corrections.jsonl`
   - daily/monthly reports
   - chart-ready JSON datasets
-  - alert events + persistent alert state
+  - alert events + persistent alert/delivery state + outbox log
 - Operations:
   - idempotent source registration and bank import (CSV/JSON)
   - receipt/bill parsing + source artifacts
@@ -73,6 +73,8 @@ python3 -m ledgerflow report daily --date 2026-02-10
 python3 -m ledgerflow report monthly --month 2026-02
 python3 -m ledgerflow charts series --from-date 2026-02-01 --to-date 2026-02-29
 python3 -m ledgerflow alerts run --at 2026-02-10
+python3 -m ledgerflow alerts deliver
+python3 -m ledgerflow alerts outbox --limit 20
 python3 -m ledgerflow ai analyze --month 2026-02 --provider heuristic
 
 # Automation queue examples
@@ -118,6 +120,9 @@ python3 -m ledgerflow automation tasks --limit 25
 python3 -m ledgerflow automation run-due
 python3 -m ledgerflow automation run-next --worker-id cli-worker
 
+# Enqueue alert delivery as a queue task
+python3 -m ledgerflow automation enqueue --task-type alerts.deliver --payload-json '{"limit":100}'
+
 # Run worker loop
 python3 -m ledgerflow automation worker --worker-id cli-worker --max-tasks 20
 
@@ -130,6 +135,27 @@ python3 -m ledgerflow automation dead-letters --limit 20
 ```
 
 Job schedule validation is enforced (`daily|weekly|hourly` only, with strict `HH:MM` for timed schedules).
+
+## Alert Delivery Channels
+
+Alert rule evaluation writes events to `data/alerts/events.jsonl`. Delivery routes those events to channels defined in `data/alerts/delivery_rules.json`.
+
+Default config writes to a local outbox:
+
+```json
+{
+  "version": 1,
+  "channels": [
+    { "id": "local_outbox", "type": "outbox", "enabled": true }
+  ]
+}
+```
+
+Supported channel types:
+
+- `outbox`: append payloads to `data/alerts/outbox.jsonl`
+- `stdout`: print payload JSON to stdout
+- `webhook`: POST JSON to configured URL
 
 ## Bank JSON Mapping
 
@@ -224,6 +250,7 @@ Key behavior:
 - keys with past `"expiresAt"` are rejected
 - route-level scopes are supported:
   - `/api/automation/*` requires `automation`
+  - `/api/alerts/deliver` requires `automation`
   - `/api/ops/metrics` requires `ops`
   - `/api/backup/*` and `/api/auth/keys` require `admin`
 - optional key workspaces:

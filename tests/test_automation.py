@@ -7,6 +7,7 @@ from pathlib import Path
 from ledgerflow.automation import dispatch_due_and_work, enqueue_due_jobs, enqueue_task, list_dead_letters, list_tasks, queue_stats, read_jobs, run_next_task, run_worker, write_jobs
 from ledgerflow.bootstrap import init_data_layout
 from ledgerflow.layout import layout_for
+from ledgerflow.storage import append_jsonl
 
 
 class TestAutomation(unittest.TestCase):
@@ -147,6 +148,31 @@ class TestAutomation(unittest.TestCase):
             }
             with self.assertRaises(ValueError):
                 write_jobs(layout, bad)
+
+    def test_alerts_deliver_task_type(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            layout = layout_for(Path(td) / "data")
+            init_data_layout(layout, write_defaults=True)
+
+            append_jsonl(
+                layout.alerts_dir / "events.jsonl",
+                {
+                    "eventId": "alrt_1",
+                    "ruleId": "t",
+                    "type": "category_budget",
+                    "period": "day",
+                    "periodKey": "2026-02-10",
+                    "scopeDate": "2026-02-10",
+                    "at": "2026-02-10T00:00:00Z",
+                    "data": {},
+                    "message": "test",
+                },
+            )
+            enqueue_task(layout, task_type="alerts.deliver", payload={"limit": 10})
+            res = run_next_task(layout, worker_id="t-deliver")
+            self.assertEqual(res["status"], "done")
+            out = (((res.get("task") or {}).get("result") or {}))
+            self.assertEqual(int(out.get("delivered") or 0), 1)
 
 
 if __name__ == "__main__":

@@ -69,6 +69,18 @@ class Layout:
         return self.alerts_dir / "alert_rules.json"
 
     @property
+    def alert_delivery_rules_path(self) -> Path:
+        return self.alerts_dir / "delivery_rules.json"
+
+    @property
+    def alert_delivery_state_path(self) -> Path:
+        return self.alerts_dir / "delivery_state.json"
+
+    @property
+    def alert_outbox_path(self) -> Path:
+        return self.alerts_dir / "outbox.jsonl"
+
+    @property
     def rules_dir(self) -> Path:
         return self.data_dir / "rules"
 

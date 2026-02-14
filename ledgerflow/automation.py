@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .ai_analysis import analyze_spending
+from .alert_delivery import deliver_alert_events
 from .alerts import run_alerts
 from .bootstrap import init_data_layout
 from .building import build_daily_monthly_caches
@@ -222,6 +223,20 @@ def _execute_task(layout: Layout, *, task_type: str, payload: dict[str, Any]) ->
         at = str(payload.get("at") or today_ymd())
         commit = bool(payload.get("commit") if "commit" in payload else True)
         return run_alerts(layout, at_date=at, commit=commit)
+
+    if task_type == "alerts.deliver":
+        dry_run = bool(payload.get("dryRun") if "dryRun" in payload else False)
+        limit = int(payload.get("limit") or 100)
+        channels: list[str] | None = None
+        raw_channels = payload.get("channels")
+        if isinstance(raw_channels, list):
+            channels = [str(x).strip() for x in raw_channels if str(x).strip()]
+        return deliver_alert_events(
+            layout,
+            limit=limit,
+            channel_ids=channels if channels else None,
+            dry_run=dry_run,
+        )
 
     if task_type == "ai.analyze":
         month = str(payload.get("month") or today_ymd()[:7])

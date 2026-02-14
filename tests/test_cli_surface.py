@@ -183,3 +183,28 @@ class TestCliSurface(unittest.TestCase):
         self.assertEqual(c2.path, "plaid.json")
         self.assertTrue(c2.commit)
         self.assertEqual(c2.sample, 7)
+
+    def test_alerts_deliver_and_outbox_flags(self) -> None:
+        parser = build_parser()
+
+        d = parser.parse_args(
+            [
+                "alerts",
+                "deliver",
+                "--limit",
+                "25",
+                "--channel",
+                "local_outbox",
+                "--channel",
+                "webhook_ops",
+                "--dry-run",
+            ]
+        )
+        self.assertEqual(d.alerts_cmd, "deliver")
+        self.assertEqual(d.limit, 25)
+        self.assertEqual(d.channel, ["local_outbox", "webhook_ops"])
+        self.assertTrue(d.dry_run)
+
+        o = parser.parse_args(["alerts", "outbox", "--limit", "15"])
+        self.assertEqual(o.alerts_cmd, "outbox")
+        self.assertEqual(o.limit, 15)

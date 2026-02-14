@@ -134,6 +134,8 @@ def required_scopes_for_request(method: str, path: str) -> list[str] | None:
 
     if p.startswith("/api/automation/"):
         scopes.append("automation")
+    if p == "/api/alerts/deliver":
+        scopes.append("automation")
     if p == "/api/ops/metrics":
         scopes.append("ops")
     if p == "/api/auth/keys" or p.startswith("/api/backup/"):

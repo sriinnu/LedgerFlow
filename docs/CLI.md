@@ -20,6 +20,7 @@ python3 -m ledgerflow --data-dir /absolute/path/to/data init
 Optional:
 
 - `--no-defaults`: do not write starter config files (`data/rules/categories.json`, `data/alerts/alert_rules.json`)
+- `--no-defaults`: do not write starter config files (`data/rules/categories.json`, `data/alerts/alert_rules.json`, `data/alerts/delivery_rules.json`)
 
 ## Manual Transactions (Append-Only)
 
@@ -356,6 +357,20 @@ Dry-run (no writes):
 python3 -m ledgerflow alerts run --at 2026-02-10 --dry-run
 ```
 
+Deliver pending alert events using channels configured in `data/alerts/delivery_rules.json`:
+
+```bash
+python3 -m ledgerflow alerts deliver
+python3 -m ledgerflow alerts deliver --channel local_outbox --limit 25
+python3 -m ledgerflow alerts deliver --dry-run
+```
+
+Inspect outbox deliveries:
+
+```bash
+python3 -m ledgerflow alerts outbox --limit 20
+```
+
 Supported rule types now include:
 
 - `category_budget`
@@ -412,6 +427,9 @@ python3 -m ledgerflow automation enqueue --task-type build
 python3 -m ledgerflow automation enqueue \
   --task-type alerts.run \
   --payload-json '{"at":"2026-02-10","commit":true}'
+python3 -m ledgerflow automation enqueue \
+  --task-type alerts.deliver \
+  --payload-json '{"limit":100}'
 ```
 
 Run scheduler and worker steps:

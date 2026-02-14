@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.1 - 2026-02-14
+
+### Added
+
+- Alert delivery engine with cursor-based idempotency and channel routing (`outbox`, `stdout`, `webhook`).
+- New alert delivery files:
+  - `data/alerts/delivery_rules.json`
+  - `data/alerts/delivery_state.json`
+  - `data/alerts/outbox.jsonl`
+- CLI surfaces:
+  - `alerts deliver`
+  - `alerts outbox`
+- API surfaces:
+  - `POST /api/alerts/deliver`
+  - `GET /api/alerts/outbox`
+- Automation task support for `alerts.deliver`.
+
+### Changed
+
+- Route-level auth now requires `automation` scope for `POST /api/alerts/deliver`.
+- Ops metrics now includes `counts.alertsOutbox`.
+
 ## 0.2.0 - 2026-02-11
 
 ### Added

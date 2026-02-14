@@ -24,6 +24,7 @@ from .review import resolve_review_transaction, review_queue
 from .sources import register_file
 from .storage import append_jsonl
 from .alerts import run_alerts
+from .alert_delivery import deliver_alert_events, list_outbox_entries
 from .charts import write_category_breakdown_month, write_merchant_top_month, write_series
 from .documents import import_and_parse_bill, import_and_parse_receipt
 from .dedup import mark_manual_duplicates_against_bank
@@ -250,6 +251,28 @@ def _cmd_alerts_run(args: argparse.Namespace) -> int:
     parse_ymd(at)
     res = run_alerts(layout, at_date=at, commit=not args.dry_run)
     print(json.dumps(res, ensure_ascii=False))
+    return 0
+
+
+def _cmd_alerts_deliver(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    channels = list(args.channel or [])
+    res = deliver_alert_events(
+        layout,
+        limit=args.limit,
+        channel_ids=channels if channels else None,
+        dry_run=bool(args.dry_run),
+    )
+    print(json.dumps(res, ensure_ascii=False))
+    return 0
+
+
+def _cmd_alerts_outbox(args: argparse.Namespace) -> int:
+    layout = layout_for(args.data_dir)
+    init_data_layout(layout, write_defaults=False)
+    items = list_outbox_entries(layout, limit=args.limit)
+    print(json.dumps({"items": items, "count": len(items)}, ensure_ascii=False))
     return 0
 
 
@@ -788,6 +811,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_arun.add_argument("--dry-run", action="store_true", help="Do not write events/state.")
     p_arun.set_defaults(func=_cmd_alerts_run)
 
+    p_adeliver = sub_alerts.add_parser("deliver", help="Deliver alert events to configured channels.")
+    p_adeliver.add_argument("--limit", type=int, default=100, help="Max pending events per channel.")
+    p_adeliver.add_argument("--channel", action="append", help="Channel id filter. Repeat flag to pass multiple.")
+    p_adeliver.add_argument("--dry-run", action="store_true", help="Preview delivery without writing outbox/state.")
+    p_adeliver.set_defaults(func=_cmd_alerts_deliver)
+
+    p_aoutbox = sub_alerts.add_parser("outbox", help="Inspect delivered alert payloads.")
+    p_aoutbox.add_argument("--limit", type=int, default=50)
+    p_aoutbox.set_defaults(func=_cmd_alerts_outbox)
+
     p_export = sub.add_parser("export", help="Export ledger data.")
     sub_export = p_export.add_subparsers(dest="export_cmd", required=True)
 
@@ -1013,7 +1046,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_adl.set_defaults(func=_cmd_automation_dead_letters)
 
     p_aenq = sub_auto.add_parser("enqueue", help="Enqueue a task into the automation queue.")
-    p_aenq.add_argument("--task-type", required=True, help="Task type (build, alerts.run, ai.analyze, report.daily, report.monthly).")
+    p_aenq.add_argument(
+        "--task-type",
+        required=True,
+        help="Task type (build, alerts.run, alerts.deliver, ai.analyze, report.daily, report.monthly).",
+    )
     p_aenq.add_argument("--payload-json", help="JSON object payload.")
     p_aenq.add_argument("--run-at", help="ISO timestamp for earliest run time (UTC recommended).")
     p_aenq.add_argument("--max-retries", type=int, default=2)
